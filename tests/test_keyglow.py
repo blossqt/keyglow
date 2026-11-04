@@ -107,6 +107,25 @@ class FirmwareMatchesTest(unittest.TestCase):
         self.assertEqual(lit, set(st.FN_KEYS))
         self.assertEqual(keys[0].index('KC_CAPS'), st.CAPS_KEY)
 
+    def test_hotkeys_page_matches_the_keymap(self):
+        """Every Fn hotkey listed does something on layer 1, and every key that does is listed
+        (F2-F12 by Fn+1's line)."""
+        from keyglow.ui.hotkeys import KEYBOARD
+        keymap = (FIRMWARE / 'keymap.c').read_text(encoding='utf-8')
+        body = re.search(r'\[1\] = LAYOUT_65_ansi_blocker\((.*?)\n    \)', keymap, re.S).group(1)
+        layer = [k.strip() for k in body.replace('\n', ' ').split(',') if k.strip()]
+        labels = [k[3] for k in st.LAYOUT]
+        listed = set()
+        for _, rows in KEYBOARD:
+            for keys, _what in rows:
+                key = keys.split('+')[-1]
+                index = labels.index(key)
+                self.assertNotEqual(layer[index], '_______', keys)
+                listed.add(index)
+        listed |= set(range(2, 13))
+        doing = {i for i, k in enumerate(layer) if k != '_______'}
+        self.assertEqual(doing, listed)
+
     def test_old_state_reads(self):
         """Keyglow's first firmware keeps 222 bytes: its lighting reads, with the new settings'
         defaults."""
@@ -405,6 +424,17 @@ class WindowTest(unittest.TestCase):
         # every tile draws (the reactive one with its pretend typing too)
         for tile in self.window.themes.tiles:
             tile.grab()
+
+    def test_tabs_change_with_one_click(self):
+        """Back to a tab left a moment ago: once, it took a second click (no exclusive group)."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        tabs = [self.window.themes_tab, self.window.keys_tab, self.window.edge_tab, self.window.keyboard_tab,
+                self.window.hotkeys_tab]
+        for n in (1, 0, 1, 2, 0, 4, 3, 3, 0):
+            QTest.mouseClick(tabs[n], Qt.LeftButton)
+            self.assertEqual(self.window.zone_pages.currentIndex(), n)
+            self.assertEqual([t.isChecked() for t in tabs], [i == n for i in range(len(tabs))])
 
     def test_keyboard_settings_reach_keyboard(self):
         controls = self.window.keyboard_controls

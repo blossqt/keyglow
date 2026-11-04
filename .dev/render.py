@@ -59,6 +59,9 @@ window.board.show_light('fn')
 settle()
 window.grab().save(str(out / 'keyglow-keyboard.png'))
 window.board.show_light('')
+window.hotkeys_tab.setChecked(True)
+settle()
+window.grab().save(str(out / 'keyglow-hotkeys.png'))
 
 window.keys_tab.setChecked(True)
 keys = window.keys_controls

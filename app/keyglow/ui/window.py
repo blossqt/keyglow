@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
-from PySide6.QtWidgets import (QColorDialog, QComboBox, QHBoxLayout, QInputDialog, QLineEdit, QMessageBox,
+from PySide6.QtWidgets import (QButtonGroup, QColorDialog, QComboBox, QHBoxLayout, QInputDialog, QLineEdit, QMessageBox,
                                QPushButton, QSlider, QVBoxLayout, QWidget)
 
 from .. import __version__, device, flasher, presets
@@ -15,6 +15,7 @@ from . import suiteicons, suitesettings as ss
 from . import theme
 from .board import Board
 from .icons import app_icon
+from .hotkeys import GROUPS as HOTKEYS, HotkeysPage
 from .themes import ThemesPage
 
 SWATCHES = ['#ffffff', '#ffd1dc', '#c2255c', '#ff2a2a', '#ff7a00', '#ffd400', '#3ddc5a', '#00d5ff',
@@ -440,6 +441,7 @@ class Window(QWidget):
         link.loaded.connect(self._loaded)
         link.failed.connect(lambda words: None)     # a lost keyboard shows as such; nothing to say
         QShortcut(QKeySequence.SelectAll, self, activated=self.board.pick_all)
+        ss.shortcut_sheet(self, 'Keyglow', HOTKEYS)
         self._status(device.ABSENT)
         self.keys_controls.fill()
         self.edge_controls.fill()
@@ -458,7 +460,9 @@ class Window(QWidget):
         self.keys_tab = QPushButton('Keys')
         self.edge_tab = QPushButton('Base light')
         self.keyboard_tab = QPushButton('Keyboard')
-        self.tabs = ss.Segmented([self.themes_tab, self.keys_tab, self.edge_tab, self.keyboard_tab])
+        self.hotkeys_tab = QPushButton('Hotkeys')
+        self.tabs = ss.Segmented([self.themes_tab, self.keys_tab, self.edge_tab, self.keyboard_tab,
+                                  self.hotkeys_tab])
         self.themes_tab.setChecked(True)
         column.addWidget(self.tabs, 0, Qt.AlignLeft)
         self.zone_pages = theme.Pages()
@@ -475,7 +479,15 @@ class Window(QWidget):
         self.zone_pages.addWidget(ss.scrolled(self.edge_controls))
         self.keyboard_controls = KeyboardControls(self)
         self.zone_pages.addWidget(ss.scrolled(self.keyboard_controls))
-        for n, tab in enumerate((self.themes_tab, self.keys_tab, self.edge_tab, self.keyboard_tab)):
+        self.hotkeys = HotkeysPage()
+        self.zone_pages.addWidget(ss.scrolled(self.hotkeys))
+        # one tab at a time: without the group, the tab just left stayed checked, and a click on it
+        # unchecked it rather than going back to it
+        self.tab_group = QButtonGroup(self)
+        self.tab_group.setExclusive(True)
+        for n, tab in enumerate((self.themes_tab, self.keys_tab, self.edge_tab, self.keyboard_tab,
+                                 self.hotkeys_tab)):
+            self.tab_group.addButton(tab, n)
             tab.toggled.connect(lambda on, n=n: on and self.zone_pages.setCurrentIndex(n))
         column.addWidget(self.zone_pages, 1)
         return page
