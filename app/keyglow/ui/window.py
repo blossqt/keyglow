@@ -15,6 +15,7 @@ from . import suiteicons, suitesettings as ss
 from . import theme
 from .board import Board
 from .icons import app_icon
+from .themes import ThemesPage
 
 SWATCHES = ['#ffffff', '#ffd1dc', '#c2255c', '#ff2a2a', '#ff7a00', '#ffd400', '#3ddc5a', '#00d5ff',
             '#2a6bff', '#8b3dff', '#ff3dd8', '#000000']
@@ -309,6 +310,7 @@ class Window(QWidget):
         self.keys_controls.fill()
         self.edge_controls.fill()
         self.master.setValue(self.state.master)
+        self.themes.mark(self.state)
 
     # --- pages ------------------------------------------------------------------------------
 
@@ -317,18 +319,22 @@ class Window(QWidget):
         column = QVBoxLayout(page)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(16)
+        self.themes_tab = QPushButton('Themes')
         self.keys_tab = QPushButton('Keys')
         self.edge_tab = QPushButton('Base light')
-        self.tabs = ss.Segmented([self.keys_tab, self.edge_tab])
-        self.keys_tab.setChecked(True)
+        self.tabs = ss.Segmented([self.themes_tab, self.keys_tab, self.edge_tab])
+        self.themes_tab.setChecked(True)
         column.addWidget(self.tabs, 0, Qt.AlignLeft)
         self.zone_pages = theme.Pages()
+        self.themes = ThemesPage()
+        self.themes.chosen.connect(self.use_theme)
         self.keys_controls = ZoneControls(self, 'keys')
         self.edge_controls = ZoneControls(self, 'edge')
+        self.zone_pages.addWidget(ss.scrolled(self.themes))
         self.zone_pages.addWidget(ss.scrolled(self.keys_controls))
         self.zone_pages.addWidget(ss.scrolled(self.edge_controls))
-        self.keys_tab.toggled.connect(lambda on: on and self.zone_pages.setCurrentIndex(0))
-        self.edge_tab.toggled.connect(lambda on: on and self.zone_pages.setCurrentIndex(1))
+        for n, tab in enumerate((self.themes_tab, self.keys_tab, self.edge_tab)):
+            tab.toggled.connect(lambda on, n=n: on and self.zone_pages.setCurrentIndex(n))
         column.addWidget(self.zone_pages, 1)
         return page
 
@@ -406,11 +412,19 @@ class Window(QWidget):
         self.master.setValue(state.master)
         self.master.blockSignals(False)
         self.board.show_state(state)
+        self.themes.mark(state)
 
     def changed(self) -> None:
         """The window's lighting changed: the picture and the keyboard follow."""
         self.board.show_state(self.state)
+        self.themes.mark(self.state)
         self.link.want(self.state)
+
+    def use_theme(self, choice) -> None:
+        self.state = choice.apply(self.state)
+        self.keys_controls.fill()
+        self.edge_controls.fill()
+        self.changed()
 
     def _master(self, value: int) -> None:
         self.state.master = value

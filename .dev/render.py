@@ -47,8 +47,9 @@ for _ in range(100):
     if window.status == device.READY:
         break
 settle()
-window.grab().save(str(out / 'keyglow-rainbow.png'))
+window.grab().save(str(out / 'keyglow-themes.png'))
 
+window.keys_tab.setChecked(True)
 keys = window.keys_controls
 keys.effect.setCurrentIndex(keys.effect.findData(st.KEY_CUSTOM))
 window.board._pick(set(range(15, 30)))

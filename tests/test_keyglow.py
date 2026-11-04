@@ -270,6 +270,7 @@ class WindowTest(unittest.TestCase):
         self.assertTrue(self.fake.state.on & st.ON_KEYS)
 
     def test_painting_keys(self):
+        self.window.keys_tab.setChecked(True)
         controls = self.window.keys_controls
         controls.effect.setCurrentIndex(controls.effect.findData(st.KEY_CUSTOM))
         self.assertTrue(self.window.board.picking)
@@ -293,6 +294,46 @@ class WindowTest(unittest.TestCase):
         QTest.mouseClick(board, Qt.LeftButton, Qt.ControlModifier, board.key_rect(17).center().toPoint())
         self.assertEqual(board.picked_keys, {16, 17})
         self.assertEqual(board.key_at(board.key_rect(61).center()), 61)     # the space bar
+
+    def test_theme_reaches_keyboard(self):
+        from keyglow import presets
+        self.window.master.setValue(120)
+        ocean = next(t for t in presets.THEMES if t.name == 'Ocean')
+        tile = next(t for t in self.window.themes.tiles if t.choice is ocean)
+        tile.click()
+        self.assertTrue(_wait_until(lambda: self.fake.state.edge.mode == st.EDGE_CHASE))
+        self.assertEqual(self.fake.state.keys.mode, st.KEY_GRADIENT)
+        self.assertEqual(self.fake.state.master, 120)                 # brightness kept
+        self.assertTrue(tile.current)
+        self.assertEqual(self.window.keys_controls.effect.currentData(), st.KEY_GRADIENT)
+        # changing anything after: no longer that theme
+        self.window.edge_controls.effect.setCurrentIndex(
+            self.window.edge_controls.effect.findData(st.EDGE_SOLID))
+        self.assertFalse(tile.current)
+
+    def test_per_key_theme_paints_keys(self):
+        from keyglow import presets
+        gaming = next(t for t in presets.THEMES if t.name == 'Gaming')
+        self.window.use_theme(gaming)
+        w = next(i for i, k in enumerate(st.LAYOUT) if k[3] == 'W')
+        q = next(i for i, k in enumerate(st.LAYOUT) if k[3] == 'Q')
+        self.assertTrue(_wait_until(lambda: self.fake.state.keys.mode == st.KEY_CUSTOM))
+        self.assertNotEqual(self.fake.state.perkey[w], self.fake.state.perkey[q])
+
+    def test_themes_all_fit_the_firmware(self):
+        from keyglow import presets
+        names = set()
+        for choice in presets.THEMES:
+            state = choice.apply(st.State())
+            self.assertEqual(len(state.pack()), st.STATE_SIZE)
+            self.assertIn(state.keys.mode, st.KEY_EFFECTS, choice.name)
+            self.assertIn(state.edge.mode, st.EDGE_EFFECTS, choice.name)
+            self.assertTrue(choice.shown_by(state), choice.name)
+            names.add(choice.name)
+        self.assertEqual(len(names), len(presets.THEMES))
+        # every tile draws (the reactive one with its pretend typing too)
+        for tile in self.window.themes.tiles:
+            tile.grab()
 
     def test_loaded_lighting_shown(self):
         self.assertEqual(self.window.keys_controls.effect.currentData(), st.KEY_RAINBOW)
