@@ -38,9 +38,21 @@ class Keyboard:
         if close:
             close()
 
-    def _ask(self, *data: int, payload: bytes = b'') -> bytes:
+    def _ask(self, *data: int, payload: bytes = b'', mine=None) -> bytes:
+        """mine(answer): whether an answer with the right command is the one to this packet (a
+        read's: the part asked for)."""
         packet = (bytes(data) + payload).ljust(PACKET, b'\0')
         answer = self.link.transact(packet)
+
+        def ours(a) -> bool:
+            return bool(a) and a[0] == data[0] and (mine is None or mine(a))
+        # Every program with the channel open gets every answer: one meant for another (a second
+        # Keyglow, a probe) is passed over, and this one's read after it
+        again = getattr(self.link, 'read_again', None)
+        for _ in range(4):
+            if not again or ours(answer):
+                break
+            answer = again()
         if not answer or answer[0] != data[0]:
             raise DeviceError(f'the keyboard answered command {data[0]} with {answer[:1].hex() or "nothing"}')
         return answer
@@ -68,7 +80,7 @@ class Keyboard:
         data = bytearray()
         for off in range(0, self.size, CHUNK):
             n = min(CHUNK, self.size - off)
-            answer = self._ask(READ, off, n)
+            answer = self._ask(READ, off, n, mine=lambda a, off=off, n=n: a[1] == off and a[2] == n)
             if answer[1] != off or answer[2] != n:
                 raise DeviceError('the keyboard sent back the wrong part of its lighting')
             data += answer[3:3 + n]
@@ -122,6 +134,12 @@ class _HidLink:
     def transact(self, packet: bytes) -> bytes:
         self.device.write(packet)
         return self.device.read()
+
+    def read_again(self) -> bytes:
+        try:
+            return self.device.read(250)
+        except TimeoutError:
+            return b''
 
     def close(self) -> None:
         self.device.close()

@@ -253,6 +253,26 @@ class OldFirmwareTest(unittest.TestCase):
         self.assertEqual(len(fake.live), st.OLD_SIZE)
         self.assertEqual(fake.state.keys.a, (5, 6, 7))
 
+    def test_answer_meant_for_another_is_passed_over(self):
+        """Another program on the channel: its answers reach Keyglow too, ahead of Keyglow's own."""
+        fake = device.FakeAlt()
+
+        class Shared:
+            def __init__(self):
+                self.waiting = []
+
+            def transact(self, packet):
+                stray = fake.transact(bytes([device.READ, 0, 4]).ljust(device.PACKET, b'\0'))
+                self.waiting.append(fake.transact(packet))
+                return stray                # the other program's answer comes first
+
+            def read_again(self):
+                return self.waiting.pop(0) if self.waiting else b''
+
+        keyboard = device.Keyboard(Shared())
+        keyboard.hello()
+        self.assertEqual(keyboard.read_state().pack(), fake.state.pack())
+
     def test_current_firmware(self):
         keyboard = _keyboard(device.FakeAlt())
         self.assertFalse(keyboard.outdated)
