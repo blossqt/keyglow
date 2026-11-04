@@ -11,7 +11,7 @@
 
 #define KG_STATE_VERSION 2
 #define KG_PROTOCOL 1
-#define KG_FIRMWARE 3           // this firmware's own number, which the app compares with its copy's
+#define KG_FIRMWARE 4           // this firmware's own number, which the app compares with its copy's
 #define KG_STATE_SIZE_1 222     // version 1's state (Keyglow 0.1.0-0.1.1): kept as is when found
 
 #define KG_KEYS 67              // LEDs 0-66 sit under the keys, in LAYOUT order
@@ -80,4 +80,6 @@ extern kg_state_t kg_state;
 extern uint16_t   kg_hits[KG_KEYS];  // when each key was last pressed (timer_read() | 1), 0 for long ago
 extern uint32_t   kg_awake_at;       // the last key or change from the app (timer_read32())
 extern bool       kg_fn_keys[KG_KEYS];  // the keys that do something on the Fn layer, and Fn itself
-extern uint8_t    kg_caps_led;       // the LED under Caps Lock
+extern uint8_t    kg_caps_leds[3];   // lit for Caps Lock: its own LED, and those of the keys right of
+                                     // it (A) and below it (Left Shift), whose light shows round its
+                                     // keycap where its own, under an opaque cap, does not

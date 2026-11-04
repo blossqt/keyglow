@@ -12,7 +12,7 @@ STATE_VERSION = 2
 PROTOCOL = 1
 STATE_SIZE = 250
 OLD_SIZE = 222      # version 1's state, which Keyglow's first firmware (0.1.0-0.1.1) keeps
-FIRMWARE = 3        # the firmware Keyglow carries (KG_FIRMWARE); a keyboard on less is offered it
+FIRMWARE = 4        # the firmware Keyglow carries (KG_FIRMWARE); a keyboard on less is offered it
 
 KEYS = 67           # LEDs 0-66, under the keys in layout order
 EDGE = 38           # LEDs 67-104, round the edge
@@ -128,6 +128,9 @@ FN_KEYS = frozenset(
     + [45, 49, 50, 51, 56, 57]                  # lit parts, bootloader, NKRO, debug, PgUp, volume down
     + [63, 64, 65, 66])                         # Fn, Home, PgDn, End
 CAPS_KEY = 30
+# Lit for Caps Lock: its own key, and the keys right of it (A) and below it (Left Shift), whose
+# light shows round its keycap where its own, under an opaque cap, doesn't (firmware 4).
+CAPS_KEYS = (CAPS_KEY, 31, 44)
 
 
 # --- the board -----------------------------------------------------------------------------
@@ -271,7 +274,7 @@ def colors(state: State, ms: int, pressed: dict | None = None, caps: bool = Fals
     for i in range(KEYS):
         if fn:
             out.append(_scale(state.fn, state.master) if i in FN_KEYS else BLACK)
-        elif caps and i == CAPS_KEY:
+        elif caps and i in CAPS_KEYS:
             out.append(_scale(state.caps, state.master))
         elif state.on & ON_KEYS:
             bright = state.keys.bright * state.master // 255

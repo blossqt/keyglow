@@ -288,7 +288,9 @@ class KeyboardControls(QWidget):
         column.addWidget(self.update_frame)
 
         self.caps_frame, items = ss.section('')
-        row, self.caps_on = ss.switch('Light Caps Lock while it is on', '', True)
+        row, self.caps_on = ss.switch('Light Caps Lock while it is on',
+                                      'Its colour shows on Caps Lock and on the keys right of it and below it.',
+                                      True)
         self.caps_on.toggled.connect(self._changed)
         items.addWidget(row)
         rows = ss.form()
@@ -334,8 +336,8 @@ class KeyboardControls(QWidget):
         self.update_words.setText(
             'These settings need the newer Keyglow firmware on the keyboard. Your lighting stays as it is.'
             if missing else
-            'Keyglow has newer firmware for the keyboard: Caps Lock now lights in the colour you choose, '
-            'where it showed the opposite colour. Your lighting stays as it is.')
+            'Keyglow has newer firmware for the keyboard: Caps Lock lights in the colour you choose, and on '
+            'the keys right of it and below it too, so it shows past its keycap. Your lighting stays as it is.')
         for frame in (self.caps_frame, self.fn_frame, self.idle_frame):
             frame.setEnabled(not missing)
 

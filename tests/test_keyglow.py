@@ -106,6 +106,7 @@ class FirmwareMatchesTest(unittest.TestCase):
         lit |= {i for i, k in enumerate(keys[0]) if k == 'MO(1)'}
         self.assertEqual(lit, set(st.FN_KEYS))
         self.assertEqual(keys[0].index('KC_CAPS'), st.CAPS_KEY)
+        self.assertEqual(st.CAPS_KEYS, tuple(keys[0].index(k) for k in ('KC_CAPS', 'KC_A', 'KC_LSFT')))
 
     def test_drops_caps_lock_flip_is_off(self):
         """Drop's indicator turned Caps Lock's colour inside out (red came out cyan) after Keyglow
@@ -232,7 +233,10 @@ class EffectsTest(unittest.TestCase):
         state.caps, state.fn = (255, 0, 0), (0, 0, 255)
         lit = st.colors(state, 0, caps=True)
         self.assertEqual(lit[st.CAPS_KEY], (255, 0, 0))
+        self.assertEqual(lit[31], (255, 0, 0))                 # A, right of it
+        self.assertEqual(lit[44], (255, 0, 0))                 # Left Shift, below it
         self.assertEqual(lit[0], (10, 10, 10))
+        self.assertEqual(lit[32], (10, 10, 10))                # S
         lit = st.colors(state, 0, fn=True)
         self.assertEqual(lit[63], (0, 0, 255))                 # Fn
         self.assertEqual(lit[16], (0, 0, 0))                   # Q does nothing with Fn

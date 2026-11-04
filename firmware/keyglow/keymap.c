@@ -43,7 +43,7 @@ kg_state_t kg_state;
 uint16_t   kg_hits[KG_KEYS];
 uint32_t   kg_awake_at;
 bool       kg_fn_keys[KG_KEYS];
-uint8_t    kg_caps_led = 0xFF;
+uint8_t    kg_caps_leds[3] = {0xFF, 0xFF, 0xFF};
 
 static bool     kg_dirty;        // changed on the keyboard itself (Fn keys): saved a moment later
 static uint16_t kg_dirty_at;
@@ -122,7 +122,9 @@ static void kg_find_keys(void) {
             uint16_t base = keymap_key_to_keycode(0, at);
             uint16_t fn   = keymap_key_to_keycode(1, at);
             kg_fn_keys[led] = (fn != KC_TRNS && fn != KC_NO) || base == MO(1);
-            if (base == KC_CAPS) kg_caps_led = led;
+            if (base == KC_CAPS) kg_caps_leds[0] = led;
+            if (base == KC_A) kg_caps_leds[1] = led;
+            if (base == KC_LSFT) kg_caps_leds[2] = led;
         }
     }
 }

@@ -138,7 +138,7 @@ static bool keyglow(effect_params_t *params) {
                 kg_copy(kg_state.fn, rgb);
                 bright = 255;
             }
-        } else if (i == kg_caps_led && caps) {
+        } else if (caps && (i == kg_caps_leds[0] || i == kg_caps_leds[1] || i == kg_caps_leds[2])) {
             kg_copy(kg_state.caps, rgb);
             bright = 255;
         } else if (i < KG_FIRST_EDGE) {
