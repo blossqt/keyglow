@@ -12,7 +12,7 @@ STATE_VERSION = 2
 PROTOCOL = 1
 STATE_SIZE = 250
 OLD_SIZE = 222      # version 1's state, which Keyglow's first firmware (0.1.0-0.1.1) keeps
-FIRMWARE = 2        # the firmware Keyglow carries (KG_FIRMWARE); a keyboard on less is offered it
+FIRMWARE = 3        # the firmware Keyglow carries (KG_FIRMWARE); a keyboard on less is offered it
 
 KEYS = 67           # LEDs 0-66, under the keys in layout order
 EDGE = 38           # LEDs 67-104, round the edge

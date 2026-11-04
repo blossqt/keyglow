@@ -11,7 +11,7 @@
 
 #define KG_STATE_VERSION 2
 #define KG_PROTOCOL 1
-#define KG_FIRMWARE 2           // this firmware's own number, which the app compares with its copy's
+#define KG_FIRMWARE 3           // this firmware's own number, which the app compares with its copy's
 #define KG_STATE_SIZE_1 222     // version 1's state (Keyglow 0.1.0-0.1.1): kept as is when found
 
 #define KG_KEYS 67              // LEDs 0-66 sit under the keys, in LAYOUT order

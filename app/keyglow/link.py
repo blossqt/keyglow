@@ -35,6 +35,7 @@ class Link(QObject):
         self.keyboard: device.Keyboard | None = None
         self.current = device.ABSENT
         self.outdated = False           # the keyboard found runs older Keyglow firmware than ours
+        self.missing = False
 
     # --- from the window --------------------------------------------------------------------
 
@@ -103,6 +104,7 @@ class Link(QObject):
             return
         self.keyboard = keyboard
         self.outdated = keyboard.outdated
+        self.missing = keyboard.size != st.STATE_SIZE     # its firmware has no Keyboard tab settings
         with self._wake:
             self._wanted = None         # the keyboard's own lighting wins over what the window had
         self._sent = lighting.pack()

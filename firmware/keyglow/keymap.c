@@ -145,6 +145,13 @@ void keyboard_post_init_user(void) {
     rgb_matrix_mode_noeeprom(RGB_MATRIX_CUSTOM_keyglow);
 }
 
+// Drop's own lock-key indicator (md_rgb_matrix_indicators_advanced, called after this unless it
+// returns false) turns the Caps Lock key's colour inside out while Caps Lock is on: red came out
+// cyan. Keyglow lights Caps Lock itself, in the colour chosen, so Drop's is skipped.
+bool rgb_matrix_indicators_advanced_user(uint8_t led_min, uint8_t led_max) {
+    return false;
+}
+
 static void kg_changed(void) {
     kg_dirty    = true;
     kg_dirty_at = timer_read();

@@ -107,6 +107,14 @@ class FirmwareMatchesTest(unittest.TestCase):
         self.assertEqual(lit, set(st.FN_KEYS))
         self.assertEqual(keys[0].index('KC_CAPS'), st.CAPS_KEY)
 
+    def test_drops_caps_lock_flip_is_off(self):
+        """Drop's indicator turned Caps Lock's colour inside out (red came out cyan) after Keyglow
+        drew it: the keymap's indicator hook returns false, so it never runs."""
+        keymap = (FIRMWARE / 'keymap.c').read_text(encoding='utf-8')
+        hook = re.search(r'bool rgb_matrix_indicators_advanced_user\([^)]*\) \{(.*?)\n\}', keymap, re.S)
+        self.assertIsNotNone(hook)
+        self.assertEqual(hook.group(1).strip(), 'return false;')
+
     def test_hotkeys_page_matches_the_keymap(self):
         """Every Fn hotkey listed does something on layer 1, and every key that does is listed
         (F2-F12 by Fn+1's line)."""
@@ -533,6 +541,26 @@ class OldFirmwareWindowTest(unittest.TestCase):
         self.link.stop(save=False)
         self.window.close()
         self.window.deleteLater()
+
+    def test_firmware_2_keeps_its_settings(self):
+        """A keyboard on firmware 2 has the Keyboard tab's settings: the update is offered, and
+        they stay usable."""
+        from keyglow.ui.window import Window
+        fake = device.FakeAlt()
+        fake.firmware = 2
+        link = linkmod.Link(look=lambda: (device.READY, None), opener=lambda _: _keyboard(fake))
+        window = Window(link)
+        link.start()
+        try:
+            self.assertTrue(_wait_until(lambda: window.status == device.READY))
+            _wait_until(lambda: False, 0.2)
+            controls = window.keyboard_controls
+            self.assertFalse(controls.update_frame.isHidden())
+            self.assertTrue(controls.caps_frame.isEnabled())
+            self.assertIn('Caps Lock', controls.update_words.text())
+        finally:
+            link.stop(save=False)
+            window.deleteLater()
 
     def test_update_offered(self):
         controls = self.window.keyboard_controls

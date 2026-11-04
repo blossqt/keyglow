@@ -271,8 +271,8 @@ class KeyboardControls(QWidget):
         column.setSpacing(ss.ITEMS)
 
         self.update_frame, items = ss.section('Firmware update')
-        items.addWidget(ss.label('These settings need the newer Keyglow firmware on the keyboard. Your '
-                                 'lighting stays as it is.', wrap=True))
+        self.update_words = ss.label('', wrap=True)
+        items.addWidget(self.update_words)
         items.addWidget(ss.note('The keyboard goes dark and stops typing for about half a minute while the '
                                 'firmware is written.'))
         row = QHBoxLayout()
@@ -327,10 +327,17 @@ class KeyboardControls(QWidget):
             frame.installEventFilter(_Hover(window.board, which, frame))
         self.set_outdated(False)
 
-    def set_outdated(self, outdated: bool) -> None:
+    def set_outdated(self, outdated: bool, missing: bool = False) -> None:
+        """outdated: Keyglow carries newer firmware than the keyboard's; missing: the keyboard's
+        doesn't have these settings at all (Keyglow's first)."""
         self.update_frame.setVisible(outdated)
+        self.update_words.setText(
+            'These settings need the newer Keyglow firmware on the keyboard. Your lighting stays as it is.'
+            if missing else
+            'Keyglow has newer firmware for the keyboard: Caps Lock now lights in the colour you choose, '
+            'where it showed the opposite colour. Your lighting stays as it is.')
         for frame in (self.caps_frame, self.fn_frame, self.idle_frame):
-            frame.setEnabled(not outdated)
+            frame.setEnabled(not missing)
 
     def fill(self) -> None:
         state = self.window_.state
@@ -563,7 +570,7 @@ class Window(QWidget):
         self.keys_controls.fill()
         self.edge_controls.fill()
         self.keyboard_controls.fill()
-        self.keyboard_controls.set_outdated(self.link.outdated)
+        self.keyboard_controls.set_outdated(self.link.outdated, self.link.missing)
         if self.flash is None and self.status == device.READY:
             self.where.setText('ALT connected, new firmware ready' if self.link.outdated else 'ALT connected')
         self.master.blockSignals(True)
