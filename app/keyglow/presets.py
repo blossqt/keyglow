@@ -4,7 +4,9 @@ paints keys itself."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+import os
+from dataclasses import dataclass, replace
 
 from . import state as st
 
@@ -18,6 +20,7 @@ class Theme:
     keys: st.Zone
     edge: st.Zone
     perkey: tuple | None = None     # the theme's own per-key colours, for a "per key" theme
+    own: bool = False               # saved by the user (it can be renamed and deleted)
 
     def apply(self, state: st.State) -> st.State:
         """The state with this theme: master brightness (and per-key colours it doesn't set) kept."""
@@ -86,3 +89,55 @@ THEMES = (
           _zone(st.EDGE_SOLID, ROSE, bright=150)),
     Theme('Base light only', st.ON_EDGE, _zone(st.KEY_SOLID), _zone(st.EDGE_RAINBOW, speed=60)),
 )
+
+
+# --- the user's own themes -----------------------------------------------------------------
+# Kept in Keyglow's data folder as themes.json: a name and the lighting (the state's first,
+# version 1 part, as the keyboard keeps it) for each, in the order they were saved.
+
+def _file():
+    from . import flasher
+    return flasher.data_folder() / 'themes.json'
+
+
+def own(name: str, state: st.State) -> Theme:
+    return Theme(name, state.on, st.Zone(**vars(state.keys)), st.Zone(**vars(state.edge)),
+                 tuple(tuple(c) for c in state.perkey), own=True)
+
+
+def saved() -> list:
+    """The user's themes, oldest first; none if the file is missing or unreadable."""
+    try:
+        rows = json.loads(_file().read_text(encoding='utf-8'))
+        return [own(row['name'], st.State.unpack(bytes.fromhex(row['lighting']))) for row in rows]
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+
+
+def _write(themes: list) -> None:
+    rows = [{'name': t.name, 'lighting': t.apply(st.State()).pack()[:st.OLD_SIZE].hex()} for t in themes]
+    path = _file()
+    temp = path.with_suffix('.tmp')
+    temp.write_text(json.dumps(rows, indent=1), encoding='utf-8')
+    os.replace(temp, path)
+
+
+def save(name: str, state: st.State) -> None:
+    """Saves the lighting as a theme, replacing one of the same name where it was."""
+    themes = saved()
+    theme = own(name, state)
+    for n, old in enumerate(themes):
+        if old.name == name:
+            themes[n] = theme
+            break
+    else:
+        themes.append(theme)
+    _write(themes)
+
+
+def rename(name: str, new: str) -> None:
+    _write([replace(t, name=new) if t.name == name else t for t in saved() if t.name != new or name == new])
+
+
+def delete(name: str) -> None:
+    _write([t for t in saved() if t.name != name])

@@ -8,6 +8,8 @@ from pathlib import Path
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'windows')
 os.environ['SUITE_PLACES'] = '0'
+import tempfile  # noqa: E402
+os.environ['KEYGLOW_DATA'] = tempfile.mkdtemp(prefix='keyglow-render-')
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'app'))
 
@@ -48,6 +50,15 @@ for _ in range(100):
         break
 settle()
 window.grab().save(str(out / 'keyglow-themes.png'))
+window.save_theme('Evening')
+window.zone_pages.widget(0).verticalScrollBar().setValue(10000)
+settle()
+window.grab().save(str(out / 'keyglow-own-themes.png'))
+window.keyboard_tab.setChecked(True)
+window.board.show_light('fn')
+settle()
+window.grab().save(str(out / 'keyglow-keyboard.png'))
+window.board.show_light('')
 
 window.keys_tab.setChecked(True)
 keys = window.keys_controls
@@ -63,6 +74,17 @@ window.grab().save(str(out / 'keyglow-perkey.png'))
 window.edge_tab.setChecked(True)
 settle()
 window.grab().save(str(out / 'keyglow-base.png'))
+
+old = device.FakeAlt(old=True)
+link3 = linkmod.Link(look=lambda: (device.READY, None), opener=lambda _: (lambda k: (k.hello(), k)[1])(device.Keyboard(old)))
+outdated = Window(link3)
+outdated.resize(1040, 800)
+link3.start()
+settle(0.6)
+outdated.keyboard_tab.setChecked(True)
+settle()
+outdated.grab().save(str(out / 'keyglow-outdated.png'))
+link3.stop(save=False)
 
 link2 = linkmod.Link(look=lambda: (device.STOCK, None))
 setup = Window(link2)

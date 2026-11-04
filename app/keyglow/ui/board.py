@@ -4,6 +4,7 @@ or a box dragged round them)."""
 
 from __future__ import annotations
 
+import sys
 import time
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
@@ -26,6 +27,14 @@ SCAN_TO_LED = {1: 0, **{code: code - 1 for code in range(2, 14)}, 14: 13, 0x153:
                29: 58, 0x15B: 59, 56: 60, 57: 61, 0x138: 62, 0x14B: 64, 0x150: 65, 0x14D: 66}
 
 
+def caps_lock_on() -> bool:
+    """Whether Caps Lock is on (Windows' own state, which the keyboard lights)."""
+    if sys.platform != 'win32':
+        return False
+    import ctypes
+    return bool(ctypes.windll.user32.GetKeyState(0x14) & 1)
+
+
 class Board(QWidget):
     picked = Signal(object)     # the set of keys (LED numbers) picked
 
@@ -35,6 +44,7 @@ class Board(QWidget):
         self.picking = False                # per-key colours: keys can be picked
         self.dim = False                    # not the keyboard's own lighting (it isn't set up yet)
         self.picked_keys: set[int] = set()
+        self.showing = ''                   # 'caps' or 'fn': that light shown as if on (its setting hovered)
         self._presses: dict[int, float] = {}
         self._drag_from: QPointF | None = None
         self._drag_to: QPointF | None = None
@@ -57,6 +67,12 @@ class Board(QWidget):
     def set_dim(self, dim: bool) -> None:
         self.dim = dim
         self.update()
+
+    def show_light(self, which: str) -> None:
+        """Shows Caps Lock's light ('caps') or the Fn layer's ('fn') as if on, or neither ('')."""
+        if which != self.showing:
+            self.showing = which
+            self.update()
 
     def set_picking(self, on: bool) -> None:
         self.picking = on
@@ -186,7 +202,8 @@ class Board(QWidget):
         ms = int((time.perf_counter() - self._start) * 1000)
         now = time.perf_counter()
         pressed = {led: (now - at) * 1000 for led, at in self._presses.items()}
-        lit = st.colors(self.state, ms, pressed)
+        lit = st.colors(self.state, ms, pressed, caps=self.showing == 'caps' or caps_lock_on(),
+                        fn=self.showing == 'fn')
         u = self._unit()
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)

@@ -89,6 +89,34 @@ class FirmwareMatchesTest(unittest.TestCase):
         points = [(int(x), int(y)) for x, y in re.findall(r'\{\s*(\d+),\s*(\d+)\s*\}', block)]
         self.assertEqual(points, st.POINTS)
 
+    def test_firmware_numbers(self):
+        self.assertEqual(self._define('KG_FIRMWARE'), st.FIRMWARE)
+        self.assertEqual(self._define('KG_STATE_SIZE_1'), st.OLD_SIZE)
+        self.assertIn(f"out[9] = KG_FIRMWARE", (FIRMWARE / 'keymap.c').read_text(encoding='utf-8'))
+
+    def test_fn_keys_match_the_keymap(self):
+        """The picture's Fn layer lights the keys the firmware does: those not _______ on layer 1,
+        and Fn (MO(1) on layer 0)."""
+        keymap = (FIRMWARE / 'keymap.c').read_text(encoding='utf-8')
+        layers = re.findall(r'\[(\d)\] = LAYOUT_65_ansi_blocker\((.*?)\n    \)', keymap, re.S)
+        keys = {int(n): [k.strip() for k in body.replace('\n', ' ').split(',') if k.strip()] for n, body in layers}
+        self.assertEqual(len(keys[0]), st.KEYS)
+        self.assertEqual(len(keys[1]), st.KEYS)
+        lit = {i for i, k in enumerate(keys[1]) if k not in ('_______', 'KC_TRNS', 'KC_NO', 'XXXXXXX')}
+        lit |= {i for i, k in enumerate(keys[0]) if k == 'MO(1)'}
+        self.assertEqual(lit, set(st.FN_KEYS))
+        self.assertEqual(keys[0].index('KC_CAPS'), st.CAPS_KEY)
+
+    def test_old_state_reads(self):
+        """Keyglow's first firmware keeps 222 bytes: its lighting reads, with the new settings'
+        defaults."""
+        state = st.State()
+        state.keys.a = (1, 2, 3)
+        old = state.pack()[:st.OLD_SIZE]
+        again = st.State.unpack(old)
+        self.assertEqual(again.keys.a, (1, 2, 3))
+        self.assertEqual((again.extras, again.idle), (st.X_CAPS | st.X_FN, 10))
+
     def test_state_round_trip(self):
         state = st.State()
         state.perkey[5] = (1, 2, 3)
@@ -97,6 +125,9 @@ class FirmwareMatchesTest(unittest.TestCase):
         self.assertEqual(again.perkey[5], (1, 2, 3))
         self.assertEqual(again.edge.a, (9, 8, 7))
         self.assertEqual(len(state.pack()), st.STATE_SIZE)
+        state.extras, state.caps, state.fn, state.idle = st.X_FN, (1, 1, 1), (2, 2, 2), 30
+        again = st.State.unpack(state.pack())
+        self.assertEqual((again.extras, again.caps, again.fn, again.idle), (st.X_FN, (1, 1, 1), (2, 2, 2), 30))
 
 
 class ProtocolTest(unittest.TestCase):
@@ -167,12 +198,52 @@ class EffectsTest(unittest.TestCase):
         self.assertEqual(lit[7], (255, 0, 0))
         self.assertEqual(lit[8], (0, 0, 0))
 
+    def test_caps_and_fn(self):
+        state = st.State()
+        state.keys.mode = st.KEY_SOLID
+        state.keys.a = (10, 10, 10)
+        state.caps, state.fn = (255, 0, 0), (0, 0, 255)
+        lit = st.colors(state, 0, caps=True)
+        self.assertEqual(lit[st.CAPS_KEY], (255, 0, 0))
+        self.assertEqual(lit[0], (10, 10, 10))
+        lit = st.colors(state, 0, fn=True)
+        self.assertEqual(lit[63], (0, 0, 255))                 # Fn
+        self.assertEqual(lit[16], (0, 0, 0))                   # Q does nothing with Fn
+        state.extras = 0
+        self.assertEqual(st.colors(state, 0, caps=True, fn=True)[st.CAPS_KEY], (10, 10, 10))
+
     def test_moving(self):
         state = st.State()
         state.keys.mode, state.edge.mode = st.KEY_SOLID, st.EDGE_SOLID
         self.assertFalse(st.moving(state))
         state.edge.mode = st.EDGE_CHASE
         self.assertTrue(st.moving(state))
+
+
+class OldFirmwareTest(unittest.TestCase):
+    def test_keyboard_on_first_firmware(self):
+        fake = device.FakeAlt(old=True)
+        keyboard = _keyboard(fake)
+        self.assertTrue(keyboard.outdated)
+        self.assertEqual(keyboard.size, st.OLD_SIZE)
+        state = keyboard.read_state()
+        changed = state.copy()
+        changed.keys.a = (5, 6, 7)
+        changed.idle = 30                       # not kept by that firmware: never sent
+        keyboard.write_changes(state.pack(), changed.pack())
+        self.assertEqual(len(fake.live), st.OLD_SIZE)
+        self.assertEqual(fake.state.keys.a, (5, 6, 7))
+
+    def test_current_firmware(self):
+        keyboard = _keyboard(device.FakeAlt())
+        self.assertFalse(keyboard.outdated)
+        self.assertEqual(keyboard.size, st.STATE_SIZE)
+
+    def test_update_takes_no_backup(self):
+        from keyglow import flasher
+        steps = flasher.install_steps(take_backup=False)
+        self.assertEqual(len(steps), 1)
+        self.assertNotIn('--upload', steps[0][1])
 
 
 class LinkTest(unittest.TestCase):
@@ -335,6 +406,41 @@ class WindowTest(unittest.TestCase):
         for tile in self.window.themes.tiles:
             tile.grab()
 
+    def test_keyboard_settings_reach_keyboard(self):
+        controls = self.window.keyboard_controls
+        self.assertTrue(controls.update_frame.isHidden())
+        controls.caps_on.setChecked(False)
+        controls.idle.setCurrentIndex(controls.idle.findData(30))
+        self.assertTrue(_wait_until(lambda: self.fake.state.idle == 30))
+        self.assertEqual(self.fake.state.extras, st.X_FN)
+        controls.idle_on.setChecked(False)
+        self.assertTrue(_wait_until(lambda: self.fake.state.idle == 0))
+        controls._colour('fn', (0, 255, 0))
+        self.assertTrue(_wait_until(lambda: self.fake.state.fn == (0, 255, 0)))
+
+    def test_saved_themes(self):
+        from keyglow import presets
+        for t in presets.saved():
+            presets.delete(t.name)
+        self.window.use_theme(next(t for t in presets.THEMES if t.name == 'Ocean'))
+        self.window.state.edge.a = (1, 2, 3)
+        self.window.changed()
+        self.window.save_theme('Mine')
+        page = self.window.themes
+        self.assertEqual([t.choice.name for t in page.own_tiles], ['Mine'])
+        self.assertTrue(page.own_tiles[0].current)
+        self.assertTrue(page.none_note.isHidden())
+        self.window.use_theme(presets.THEMES[0])
+        self.assertFalse(page.own_tiles[0].current)
+        page.own_tiles[0].click()
+        self.assertTrue(_wait_until(lambda: self.fake.state.edge.a == (1, 2, 3)))
+        presets.rename('Mine', 'Ours')
+        self.assertEqual([t.name for t in presets.saved()], ['Ours'])
+        presets.delete('Ours')
+        page.show_saved(presets.saved())
+        self.assertEqual(page.own_tiles, [])
+        self.assertFalse(page.none_note.isHidden())
+
     def test_loaded_lighting_shown(self):
         self.assertEqual(self.window.keys_controls.effect.currentData(), st.KEY_RAINBOW)
         self.assertEqual(self.window.master.value(), 255)
@@ -354,6 +460,45 @@ class WindowTest(unittest.TestCase):
         self.window.edge_tab.setChecked(True)
         _wait_until(lambda: False, 0.3)
         self.window.grab().save(str(Path(out) / 'keyglow-base.png'))
+
+
+class OldFirmwareWindowTest(unittest.TestCase):
+    """A keyboard on Keyglow's first firmware: the new settings wait for the update it offers."""
+
+    def setUp(self):
+        app = _app()
+        from keyglow.ui import theme
+        if not getattr(app, '_keyglow_themed', False):
+            theme.install(app)
+            app._keyglow_themed = True
+        from keyglow.ui.window import Window
+        self.fake = device.FakeAlt(old=True)
+        self.link = linkmod.Link(look=lambda: (device.READY, None), opener=lambda _: _keyboard(self.fake))
+        self.window = Window(self.link)
+        self.window.show()
+        self.link.start()
+        self.assertTrue(_wait_until(lambda: self.window.status == device.READY))
+
+    def tearDown(self):
+        self.link.stop(save=False)
+        self.window.close()
+        self.window.deleteLater()
+
+    def test_update_offered(self):
+        controls = self.window.keyboard_controls
+        self.assertFalse(controls.update_frame.isHidden())
+        self.assertFalse(controls.caps_frame.isEnabled())
+        self.assertIn('new firmware', self.window.where.text())
+        ran = []
+        self.window._run_flash = lambda title, steps, words: ran.append(steps)
+        os.environ['KEYGLOW_MDLOADER'] = sys.executable          # any file that is there
+        try:
+            self.window.update_firmware()
+        finally:
+            del os.environ['KEYGLOW_MDLOADER']
+        self.assertTrue(_wait_until(lambda: self.fake.booted))   # asked for its bootloader: no Fn and B
+        self.assertEqual(len(ran), 1)
+        self.assertNotIn('--upload', ran[0][0][1])               # never Keyglow's firmware as the "original"
 
 
 if __name__ == '__main__':

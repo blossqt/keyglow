@@ -8,13 +8,18 @@ import colorsys
 import math
 from dataclasses import dataclass, field
 
-STATE_VERSION = 1
+STATE_VERSION = 2
 PROTOCOL = 1
-STATE_SIZE = 222
+STATE_SIZE = 250
+OLD_SIZE = 222      # version 1's state, which Keyglow's first firmware (0.1.0-0.1.1) keeps
+FIRMWARE = 2        # the firmware Keyglow carries (KG_FIRMWARE); a keyboard on less is offered it
 
 KEYS = 67           # LEDs 0-66, under the keys in layout order
 EDGE = 38           # LEDs 67-104, round the edge
 ON_KEYS, ON_EDGE = 0x01, 0x02
+X_CAPS, X_FN = 0x01, 0x02     # State.extras: Caps Lock's light, the Fn layer's lights
+SPARE = 20
+IDLE_CHOICES = (1, 2, 5, 10, 15, 30, 60)     # minutes
 
 # Effects, by the firmware's numbers. 0 is "off", which the app shows as a part switched off.
 KEY_EFFECTS = {
@@ -82,22 +87,47 @@ class State:
     keys: Zone = field(default_factory=lambda: Zone(mode=KEY_RAINBOW))
     edge: Zone = field(default_factory=lambda: Zone(mode=EDGE_RAINBOW))
     perkey: list = field(default_factory=lambda: [(255, 255, 255)] * KEYS)
+    # version 2: the firmware's defaults (kg_extra_defaults)
+    extras: int = X_CAPS | X_FN
+    caps: RGB = (255, 255, 255)
+    fn: RGB = (255, 209, 220)
+    idle: int = 10                  # minutes without a key before the lights go off; 0 never
+    spare: bytes = bytes(SPARE)     # kept as the keyboard has it
 
     def pack(self) -> bytes:
         data = bytes((STATE_VERSION, self.on, self.master)) + self.keys.pack() + self.edge.pack()
         data += b''.join(bytes(c) for c in self.perkey)
+        data += bytes((self.extras, *self.caps, *self.fn, self.idle)) + bytes(self.spare)
         assert len(data) == STATE_SIZE
         return data
 
     @classmethod
     def unpack(cls, data: bytes) -> 'State':
-        if len(data) != STATE_SIZE:
+        """A state as the keyboard keeps it: version 2's, or version 1's (whose extras are then
+        the defaults)."""
+        if len(data) not in (STATE_SIZE, OLD_SIZE):
             raise ValueError(f'a lighting state is {STATE_SIZE} bytes, not {len(data)}')
         perkey = [tuple(data[21 + i * 3:24 + i * 3]) for i in range(KEYS)]
-        return cls(data[1], data[2], Zone.unpack(data[3:12]), Zone.unpack(data[12:21]), perkey)
+        state = cls(data[1], data[2], Zone.unpack(data[3:12]), Zone.unpack(data[12:21]), perkey)
+        if len(data) == STATE_SIZE:
+            x = data[OLD_SIZE:]
+            state.extras, state.caps, state.fn, state.idle = x[0], tuple(x[1:4]), tuple(x[4:7]), x[7]
+            state.spare = bytes(x[8:8 + SPARE])
+        return state
 
     def copy(self) -> 'State':
         return State.unpack(self.pack())
+
+
+# The keys that light while Fn is held: those that do something on layer 1 of the firmware's
+# keymap (keymap.c), and Fn itself. The tests check this against the keymap.
+FN_KEYS = frozenset(
+    list(range(0, 13)) + [14]                   # ` F1-F12, Mute
+    + [17, 22, 23, 25, 26, 27, 29]              # brighter, USB port, USB power, PrtSc, ScrLk, Pause, End
+    + [32, 43]                                  # dimmer, volume up
+    + [45, 49, 50, 51, 56, 57]                  # lit parts, bootloader, NKRO, debug, PgUp, volume down
+    + [63, 64, 65, 66])                         # Fn, Home, PgDn, End
+CAPS_KEY = 30
 
 
 # --- the board -----------------------------------------------------------------------------
@@ -229,13 +259,21 @@ def _scale(c: RGB, bright: int) -> RGB:
     return tuple(v * bright // 255 for v in c)
 
 
-def colors(state: State, ms: int, pressed: dict | None = None) -> list:
+def colors(state: State, ms: int, pressed: dict | None = None, caps: bool = False,
+           fn: bool = False) -> list:
     """Every LED's colour at a moment, as the keyboard shows it: the keys' 67, then the edge's 38.
-    pressed: LED -> ms since it was pressed, for the effect that lights pressed keys."""
+    pressed: LED -> ms since it was pressed, for the effect that lights pressed keys. caps: Caps
+    Lock is on; fn: Fn is held (each shown only if the state lights it)."""
     pressed = pressed or {}
+    fn = fn and bool(state.extras & X_FN)
+    caps = caps and bool(state.extras & X_CAPS)
     out = []
     for i in range(KEYS):
-        if state.on & ON_KEYS:
+        if fn:
+            out.append(_scale(state.fn, state.master) if i in FN_KEYS else BLACK)
+        elif caps and i == CAPS_KEY:
+            out.append(_scale(state.caps, state.master))
+        elif state.on & ON_KEYS:
             bright = state.keys.bright * state.master // 255
             out.append(_scale(key_color(state, i, ms, pressed.get(i)), bright))
         else:

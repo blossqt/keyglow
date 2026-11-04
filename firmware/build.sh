@@ -18,6 +18,7 @@ rm -rf "$KEYMAP"
 cp -r "$HERE/keyglow" "$KEYMAP"
 
 cd "$QMK_HOME"
+rm -f massdrop_alt_keyglow.bin      # so a failed build never passes off the last one as new
 make -j8 massdrop/alt:keyglow 2>&1 | grep -E "error|warning|Error|\[OK\]|\[ERRORS\]|\[WARNINGS\]" || true
 test -f massdrop_alt_keyglow.bin
 

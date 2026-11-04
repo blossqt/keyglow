@@ -4,12 +4,12 @@ firmware, the settings make way for setting it up."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
-from PySide6.QtWidgets import (QColorDialog, QComboBox, QHBoxLayout, QMessageBox, QPushButton, QSlider,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QColorDialog, QComboBox, QHBoxLayout, QInputDialog, QLineEdit, QMessageBox,
+                               QPushButton, QSlider, QVBoxLayout, QWidget)
 
-from .. import __version__, device, flasher
+from .. import __version__, device, flasher, presets
 from .. import state as st
 from . import suiteicons, suitesettings as ss
 from . import theme
@@ -238,6 +238,140 @@ class ZoneControls(QWidget):
             self.window_.changed()
 
 
+class _Hover(QObject):
+    """Shows a light on the picture while the pointer is over its setting."""
+
+    def __init__(self, board: Board, which: str, parent):
+        super().__init__(parent)
+        self.board, self.which = board, which
+
+    def eventFilter(self, obj, event) -> bool:
+        if event.type() == QEvent.Enter:
+            self.board.show_light(self.which)
+        elif event.type() == QEvent.Leave and self.board.showing == self.which:
+            self.board.show_light('')
+        return False
+
+
+def _minutes(n: int) -> str:
+    return '1 minute' if n == 1 else f'{n} minutes'
+
+
+class KeyboardControls(QWidget):
+    """Caps Lock's light, the Fn layer's, and lights off when idle - and, on a keyboard whose
+    Keyglow firmware is older than these, the update that brings them."""
+
+    def __init__(self, window: 'Window'):
+        super().__init__()
+        self.window_ = window
+        self._filling = False
+        column = QVBoxLayout(self)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(ss.ITEMS)
+
+        self.update_frame, items = ss.section('Firmware update')
+        items.addWidget(ss.label('These settings need the newer Keyglow firmware on the keyboard. Your '
+                                 'lighting stays as it is.', wrap=True))
+        items.addWidget(ss.note('The keyboard goes dark and stops typing for about half a minute while the '
+                                'firmware is written.'))
+        row = QHBoxLayout()
+        self.update_button = QPushButton('Update firmware')
+        self.update_button.setCursor(Qt.PointingHandCursor)
+        self.update_button.clicked.connect(window.update_firmware)
+        row.addWidget(self.update_button)
+        row.addStretch(1)
+        items.addLayout(row)
+        self.update_problem = ss.label('', ss.SMALL, role='error', wrap=True)
+        self.update_problem.hide()
+        items.addWidget(self.update_problem)
+        column.addWidget(self.update_frame)
+
+        self.caps_frame, items = ss.section('')
+        row, self.caps_on = ss.switch('Light Caps Lock while it is on', '', True)
+        self.caps_on.toggled.connect(self._changed)
+        items.addWidget(row)
+        rows = ss.form()
+        self.caps = ColorButton(lambda rgb: self._colour('caps', rgb))
+        rows.addRow(ss.label('Colour'), self.caps)
+        items.addLayout(rows)
+        column.addWidget(self.caps_frame)
+
+        self.fn_frame, items = ss.section('')
+        row, self.fn_on = ss.switch('Light the Fn layer while Fn is held',
+                                    'The keys that do something with Fn light up, and the rest go dark.', True)
+        self.fn_on.toggled.connect(self._changed)
+        items.addWidget(row)
+        rows = ss.form()
+        self.fn = ColorButton(lambda rgb: self._colour('fn', rgb))
+        rows.addRow(ss.label('Colour'), self.fn)
+        items.addLayout(rows)
+        column.addWidget(self.fn_frame)
+
+        self.idle_frame, items = ss.section('')
+        row, self.idle_on = ss.switch('Turn the lights off when idle',
+                                      'They come back on with the next key press.', True)
+        self.idle_on.toggled.connect(self._changed)
+        items.addWidget(row)
+        rows = ss.form()
+        self.idle = QComboBox()
+        for n in st.IDLE_CHOICES:
+            self.idle.addItem(_minutes(n), n)
+        self.idle.currentIndexChanged.connect(self._changed)
+        rows.addRow(ss.label('After'), self.idle)
+        items.addLayout(rows)
+        column.addWidget(self.idle_frame)
+        column.addStretch(1)
+
+        for frame, which in ((self.caps_frame, 'caps'), (self.fn_frame, 'fn')):
+            frame.installEventFilter(_Hover(window.board, which, frame))
+        self.set_outdated(False)
+
+    def set_outdated(self, outdated: bool) -> None:
+        self.update_frame.setVisible(outdated)
+        for frame in (self.caps_frame, self.fn_frame, self.idle_frame):
+            frame.setEnabled(not outdated)
+
+    def fill(self) -> None:
+        state = self.window_.state
+        self._filling = True
+        try:
+            self.caps_on.setChecked(bool(state.extras & st.X_CAPS))
+            self.fn_on.setChecked(bool(state.extras & st.X_FN))
+            self.caps.set_color(state.caps)
+            self.fn.set_color(state.fn)
+            self.idle_on.setChecked(state.idle > 0)
+            index = self.idle.findData(state.idle)
+            if index < 0:
+                index = self.idle.findData(10)
+                if state.idle:          # a number from elsewhere: shown as it is
+                    self.idle.addItem(_minutes(state.idle), state.idle)
+                    index = self.idle.count() - 1
+            self.idle.setCurrentIndex(index)
+        finally:
+            self._filling = False
+        self._shown()
+
+    def _shown(self) -> None:
+        self.caps.setEnabled(self.caps_on.isChecked())
+        self.fn.setEnabled(self.fn_on.isChecked())
+        self.idle.setEnabled(self.idle_on.isChecked())
+
+    def _changed(self, *_) -> None:
+        if self._filling:
+            return
+        state = self.window_.state
+        state.extras = (st.X_CAPS if self.caps_on.isChecked() else 0) | (st.X_FN if self.fn_on.isChecked() else 0)
+        state.idle = self.idle.currentData() if self.idle_on.isChecked() else 0
+        self._shown()
+        self.window_.changed()
+
+    def _colour(self, which: str, rgb) -> None:
+        setattr(self.window_.state, which, tuple(rgb))
+        (self.caps if which == 'caps' else self.fn).set_color(rgb)
+        self.window_.board.show_light(which)
+        self.window_.changed()
+
+
 class Window(QWidget):
     def __init__(self, link, parent=None):
         super().__init__(parent)
@@ -309,6 +443,7 @@ class Window(QWidget):
         self._status(device.ABSENT)
         self.keys_controls.fill()
         self.edge_controls.fill()
+        self.keyboard_controls.fill()
         self.master.setValue(self.state.master)
         self.themes.mark(self.state)
 
@@ -322,18 +457,25 @@ class Window(QWidget):
         self.themes_tab = QPushButton('Themes')
         self.keys_tab = QPushButton('Keys')
         self.edge_tab = QPushButton('Base light')
-        self.tabs = ss.Segmented([self.themes_tab, self.keys_tab, self.edge_tab])
+        self.keyboard_tab = QPushButton('Keyboard')
+        self.tabs = ss.Segmented([self.themes_tab, self.keys_tab, self.edge_tab, self.keyboard_tab])
         self.themes_tab.setChecked(True)
         column.addWidget(self.tabs, 0, Qt.AlignLeft)
         self.zone_pages = theme.Pages()
         self.themes = ThemesPage()
         self.themes.chosen.connect(self.use_theme)
+        self.themes.save_asked.connect(self._save_theme)
+        self.themes.rename_asked.connect(self._rename_theme)
+        self.themes.delete_asked.connect(self._delete_theme)
+        self.themes.show_saved(presets.saved())
         self.keys_controls = ZoneControls(self, 'keys')
         self.edge_controls = ZoneControls(self, 'edge')
         self.zone_pages.addWidget(ss.scrolled(self.themes))
         self.zone_pages.addWidget(ss.scrolled(self.keys_controls))
         self.zone_pages.addWidget(ss.scrolled(self.edge_controls))
-        for n, tab in enumerate((self.themes_tab, self.keys_tab, self.edge_tab)):
+        self.keyboard_controls = KeyboardControls(self)
+        self.zone_pages.addWidget(ss.scrolled(self.keyboard_controls))
+        for n, tab in enumerate((self.themes_tab, self.keys_tab, self.edge_tab, self.keyboard_tab)):
             tab.toggled.connect(lambda on, n=n: on and self.zone_pages.setCurrentIndex(n))
         column.addWidget(self.zone_pages, 1)
         return page
@@ -395,7 +537,7 @@ class Window(QWidget):
         if self.flash is not None:
             return
         words = {device.ABSENT: 'No ALT found', device.STOCK: 'ALT found, not set up',
-                 device.READY: 'ALT connected'}
+                 device.READY: 'ALT connected, new firmware ready' if self.link.outdated else 'ALT connected'}
         self.where.setText(words[status])
         ready = status == device.READY
         self.pages.setCurrentIndex({device.READY: 0, device.STOCK: 1, device.ABSENT: 2}[status])
@@ -408,6 +550,10 @@ class Window(QWidget):
         self.state = state
         self.keys_controls.fill()
         self.edge_controls.fill()
+        self.keyboard_controls.fill()
+        self.keyboard_controls.set_outdated(self.link.outdated)
+        if self.flash is None and self.status == device.READY:
+            self.where.setText('ALT connected, new firmware ready' if self.link.outdated else 'ALT connected')
         self.master.blockSignals(True)
         self.master.setValue(state.master)
         self.master.blockSignals(False)
@@ -425,6 +571,45 @@ class Window(QWidget):
         self.keys_controls.fill()
         self.edge_controls.fill()
         self.changed()
+
+    # --- the user's own themes ----------------------------------------------------------------
+
+    def _ask_name(self, title: str, start: str) -> str:
+        name, ok = QInputDialog.getText(self, title, 'Name', QLineEdit.Normal, start)
+        return name.strip() if ok else ''
+
+    def _save_theme(self) -> None:
+        taken = {t.name for t in presets.saved()}
+        n = len(taken) + 1
+        while f'My theme {n}' in taken:
+            n += 1
+        name = self._ask_name('Save theme', f'My theme {n}')
+        if not name:
+            return
+        if name in taken and QMessageBox.question(
+                self, 'Save theme', f'Replace your theme "{name}" with the lighting as it is now?') != QMessageBox.Yes:
+            return
+        self.save_theme(name)
+
+    def save_theme(self, name: str) -> None:
+        presets.save(name, self.state)
+        self.themes.show_saved(presets.saved())
+
+    def _rename_theme(self, name: str) -> None:
+        new = self._ask_name('Rename theme', name)
+        if not new or new == name:
+            return
+        if new in {t.name for t in presets.saved()} and QMessageBox.question(
+                self, 'Rename theme', f'You already have a theme called "{new}". Replace it?') != QMessageBox.Yes:
+            return
+        presets.rename(name, new)
+        self.themes.show_saved(presets.saved())
+
+    def _delete_theme(self, name: str) -> None:
+        if QMessageBox.question(self, 'Delete theme', f'Delete your theme "{name}"?') != QMessageBox.Yes:
+            return
+        presets.delete(name)
+        self.themes.show_saved(presets.saved())
 
     def _master(self, value: int) -> None:
         self.state.master = value
@@ -466,6 +651,20 @@ class Window(QWidget):
         steps = flasher.install_steps(take_backup=not flasher.backup().is_file())
         self._run_flash('Setting up your ALT', steps,
                         'Hold Fn and B for a second, until the keyboard goes dark.')
+
+    def update_firmware(self) -> None:
+        """Keyglow's newer firmware onto a keyboard running its older one: the keyboard restarts
+        into its bootloader when asked, so no Fn and B."""
+        problem = flasher.ready()
+        controls = self.keyboard_controls
+        if problem:
+            controls.update_problem.setText(problem)
+            controls.update_problem.show()
+            return
+        controls.update_problem.hide()
+        self.link.do('bootloader')
+        self._run_flash('Updating the firmware', flasher.install_steps(take_backup=False),
+                        'Waiting for the keyboard to restart into its bootloader.')
 
     def _restore(self) -> None:
         problem = flasher.ready() if not flasher.backup().is_file() else ''

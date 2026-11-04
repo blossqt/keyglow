@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later (as QMK, which this keymap is built into)
 #pragma once
 
-// Keyglow's lighting state lives in the user datablock (kg_state_t, 222 bytes).
-#define EECONFIG_USER_DATA_SIZE 222
+// Keyglow's lighting state lives in the user datablock (kg_state_t, 250 bytes).
+#define EECONFIG_USER_DATA_SIZE 250
 
 // One effect draws everything: Keyglow's own (rgb_matrix_user.inc).
 #define RGB_MATRIX_DEFAULT_MODE RGB_MATRIX_CUSTOM_keyglow

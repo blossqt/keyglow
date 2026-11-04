@@ -4,6 +4,7 @@
 #include QMK_KEYBOARD_H
 #include "raw_hid.h"
 #include "eeconfig.h"
+#include "eeprom.h"
 #include "keyglow.h"
 
 enum alt_keycodes {
@@ -40,6 +41,9 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 
 kg_state_t kg_state;
 uint16_t   kg_hits[KG_KEYS];
+uint32_t   kg_awake_at;
+bool       kg_fn_keys[KG_KEYS];
+uint8_t    kg_caps_led = 0xFF;
 
 static bool     kg_dirty;        // changed on the keyboard itself (Fn keys): saved a moment later
 static uint16_t kg_dirty_at;
@@ -47,6 +51,15 @@ static bool     kg_boot_soon;    // the app asked for the bootloader: go once th
 static uint16_t kg_boot_at;
 
 #define KG_SAVE_AFTER 1500       // ms after the last Fn change
+
+// What version 2 added: Caps Lock white, the Fn layer pink, lights off after 10 minutes.
+static void kg_extra_defaults(kg_state_t *s) {
+    s->extras  = KG_X_CAPS | KG_X_FN;
+    s->caps[0] = s->caps[1] = s->caps[2] = 255;
+    s->fn[0] = 255, s->fn[1] = 209, s->fn[2] = 220;
+    s->idle = 10;
+    memset(s->spare, 0, sizeof(s->spare));
+}
 
 static void kg_defaults(kg_state_t *s) {
     memset(s, 0, sizeof(*s));
@@ -63,27 +76,59 @@ static void kg_defaults(kg_state_t *s) {
     for (uint8_t i = 0; i < KG_KEYS; i++) {
         s->perkey[i][0] = s->perkey[i][1] = s->perkey[i][2] = 255;
     }
+    kg_extra_defaults(s);
 }
 
 // Keeps whatever arrives within what the effect can draw.
 static void kg_tidy(kg_state_t *s) {
     s->version = KG_STATE_VERSION;
     s->on &= KG_ON_KEYS | KG_ON_EDGE;
+    s->extras &= KG_X_CAPS | KG_X_FN;
     if (s->keys.mode >= KG_KEY_MODES) s->keys.mode = KG_KEY_OFF;
     if (s->edge.mode >= KG_EDGE_MODES) s->edge.mode = KG_EDGE_OFF;
-}
-
-static void kg_load(void) {
-    eeconfig_read_user_datablock(&kg_state);
-    if (!eeconfig_is_user_datablock_valid() || kg_state.version != KG_STATE_VERSION) {
-        kg_defaults(&kg_state);
-    }
-    kg_tidy(&kg_state);
 }
 
 static void kg_save(void) {
     eeconfig_update_user_datablock(&kg_state);
     kg_dirty = false;
+}
+
+static void kg_load(void) {
+    if (eeconfig_is_user_datablock_valid()) {
+        eeconfig_read_user_datablock(&kg_state);
+        if (kg_state.version != KG_STATE_VERSION) kg_defaults(&kg_state);
+    } else if (eeprom_read_dword(EECONFIG_USER) == KG_STATE_SIZE_1) {
+        // left by Keyglow's first firmware (QMK marks a datablock with its size): its lighting
+        // is the start of this one, so it is kept, and what came since starts as its defaults
+        kg_defaults(&kg_state);
+        eeprom_read_block(&kg_state, EECONFIG_USER_DATABLOCK, KG_STATE_SIZE_1);
+        kg_state.version = KG_STATE_VERSION;
+        kg_tidy(&kg_state);
+        kg_save();
+    } else {
+        kg_defaults(&kg_state);
+    }
+    kg_tidy(&kg_state);
+}
+
+// Which keys light while Fn is held - those that do something on layer 1, and Fn itself - and
+// where Caps Lock is, from the keymap, so the lights follow it if it changes.
+static void kg_find_keys(void) {
+    for (uint8_t row = 0; row < MATRIX_ROWS; row++) {
+        for (uint8_t col = 0; col < MATRIX_COLS; col++) {
+            uint8_t led = g_led_config.matrix_co[row][col];
+            if (led >= KG_KEYS) continue;
+            keypos_t at   = {.row = row, .col = col};
+            uint16_t base = keymap_key_to_keycode(0, at);
+            uint16_t fn   = keymap_key_to_keycode(1, at);
+            kg_fn_keys[led] = (fn != KC_TRNS && fn != KC_NO) || base == MO(1);
+            if (base == KC_CAPS) kg_caps_led = led;
+        }
+    }
+}
+
+static void kg_wake(void) {
+    kg_awake_at = timer_read32();
 }
 
 void eeconfig_init_user_datablock(void) {
@@ -94,6 +139,8 @@ void eeconfig_init_user_datablock(void) {
 
 void keyboard_post_init_user(void) {
     kg_load();
+    kg_find_keys();
+    kg_wake();
     rgb_matrix_enable_noeeprom();
     rgb_matrix_mode_noeeprom(RGB_MATRIX_CUSTOM_keyglow);
 }
@@ -115,7 +162,7 @@ void housekeeping_task_user(void) {
 // --- the app's channel -------------------------------------------------------------------
 //
 // Every packet is KG_PACKET (32) bytes, both ways; byte 0 is the command, echoed back.
-//   0x01 hello      -> 'K' 'G' protocol keys edge size_lo size_hi version
+//   0x01 hello      -> 'K' 'G' protocol keys edge size_lo size_hi version firmware
 //   0x02 read  off n        -> off n data[n]          (n <= 28)
 //   0x03 write off n data   -> 1 if taken, 0 if not   (applied at once, not saved)
 //   0x04 save               -> 1
@@ -143,6 +190,7 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
             out[6] = KG_STATE_SIZE & 0xFF;
             out[7] = KG_STATE_SIZE >> 8;
             out[8] = KG_STATE_VERSION;
+            out[9] = KG_FIRMWARE;
             break;
         case KG_READ: {
             uint8_t off = data[1], n = data[2];
@@ -157,6 +205,7 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
             if (n <= KG_CHUNK && off + n <= KG_STATE_SIZE) {
                 memcpy(state + off, data + 3, n);
                 kg_tidy(&kg_state);
+                kg_wake();              // a change from the app shows, even after the lights went off
                 out[1] = 1;
             }
             break;
@@ -167,6 +216,7 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
             break;
         case KG_RELOAD:
             kg_load();
+            kg_wake();
             kg_dirty = false;
             out[1]   = 1;
             break;
@@ -177,6 +227,7 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
             break;
         case KG_DEFAULTS:
             kg_defaults(&kg_state);
+            kg_wake();
             out[1] = 1;
             break;
         default:
@@ -193,6 +244,8 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     static uint32_t key_timer;
+
+    kg_wake();      // any key, pressed or let go, brings lights that went off when idle back
 
     if (record->event.pressed && record->event.key.row < MATRIX_ROWS && record->event.key.col < MATRIX_COLS) {
         uint8_t led = g_led_config.matrix_co[record->event.key.row][record->event.key.col];

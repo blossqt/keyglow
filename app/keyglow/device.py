@@ -30,6 +30,8 @@ class Keyboard:
         self.link = link
         self.protocol = 0
         self.state_version = 0
+        self.firmware = 0               # KG_FIRMWARE: 0 from Keyglow's first, which didn't say
+        self.size = st.STATE_SIZE       # how much of the state this firmware keeps
 
     def close(self) -> None:
         close = getattr(self.link, 'close', None)
@@ -51,13 +53,21 @@ class Keyboard:
         keys, edge = answer[4], answer[5]
         size = answer[6] | answer[7] << 8
         self.state_version = answer[8]
-        if (keys, edge, size) != (st.KEYS, st.EDGE, st.STATE_SIZE) or self.state_version != st.STATE_VERSION:
+        self.firmware = answer[9]
+        known = {(st.STATE_SIZE, st.STATE_VERSION), (st.OLD_SIZE, 1)}
+        if (keys, edge) != (st.KEYS, st.EDGE) or (size, self.state_version) not in known:
             raise DeviceError('the keyboard runs a different version of Keyglow firmware')
+        self.size = size
+
+    @property
+    def outdated(self) -> bool:
+        """Whether the firmware Keyglow carries is newer than the keyboard's."""
+        return self.firmware < st.FIRMWARE
 
     def read_state(self) -> st.State:
         data = bytearray()
-        for off in range(0, st.STATE_SIZE, CHUNK):
-            n = min(CHUNK, st.STATE_SIZE - off)
+        for off in range(0, self.size, CHUNK):
+            n = min(CHUNK, self.size - off)
             answer = self._ask(READ, off, n)
             if answer[1] != off or answer[2] != n:
                 raise DeviceError('the keyboard sent back the wrong part of its lighting')
@@ -72,7 +82,9 @@ class Keyboard:
                 raise DeviceError('the keyboard refused a change')
 
     def write_changes(self, before: bytes, after: bytes) -> int:
-        """Sends only the runs of bytes that differ; returns how many packets went."""
+        """Sends only the runs of bytes that differ; returns how many packets went. Only what the
+        keyboard's firmware keeps goes."""
+        before, after = before[:self.size], after[:self.size]
         if len(before) != len(after):
             self.write(0, after)
             return -(-len(after) // CHUNK)
@@ -141,8 +153,10 @@ def open_keyboard(interface) -> Keyboard:
 class FakeAlt:
     """Keyglow's firmware, in Python: tests talk to it as they would to the keyboard."""
 
-    def __init__(self, saved: st.State | None = None):
-        self.saved = (saved or st.State()).pack()
+    def __init__(self, saved: st.State | None = None, old: bool = False):
+        self.size = st.OLD_SIZE if old else st.STATE_SIZE      # old: Keyglow's first firmware
+        self.firmware = 0 if old else st.FIRMWARE
+        self.saved = (saved or st.State()).pack()[:self.size]
         self.live = bytearray(self.saved)
         self.packets = 0
         self.saves = 0
@@ -156,19 +170,19 @@ class FakeAlt:
         out[0] = packet[0]
         cmd = packet[0]
         if cmd == HELLO:
-            out[1:9] = b'KG' + bytes((st.PROTOCOL, st.KEYS, st.EDGE, st.STATE_SIZE & 0xFF, st.STATE_SIZE >> 8,
-                                      st.STATE_VERSION))
+            out[1:10] = b'KG' + bytes((st.PROTOCOL, st.KEYS, st.EDGE, self.size & 0xFF, self.size >> 8,
+                                       1 if self.size == st.OLD_SIZE else st.STATE_VERSION, self.firmware))
         elif cmd == READ:
             off, n = packet[1], packet[2]
-            if n > CHUNK or off + n > st.STATE_SIZE:
+            if n > CHUNK or off + n > self.size:
                 n = 0
             out[1], out[2] = off, n
             out[3:3 + n] = self.live[off:off + n]
         elif cmd == WRITE:
             off, n = packet[1], packet[2]
-            if n <= CHUNK and off + n <= st.STATE_SIZE:
+            if n <= CHUNK and off + n <= self.size:
                 self.live[off:off + n] = packet[3:3 + n]
-                self.live[0] = st.STATE_VERSION
+                self.live[0] = 1 if self.size == st.OLD_SIZE else st.STATE_VERSION
                 out[1] = 1
         elif cmd == SAVE:
             self.saved = bytes(self.live)
@@ -181,7 +195,7 @@ class FakeAlt:
             self.booted = True
             out[1] = 1
         elif cmd == DEFAULTS:
-            self.live = bytearray(st.State().pack())
+            self.live = bytearray(st.State().pack()[:self.size])
             out[1] = 1
         else:
             out[0] = 0xFF

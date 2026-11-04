@@ -6,10 +6,13 @@
 // KG_STATE_VERSION when you do.
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
-#define KG_STATE_VERSION 1
+#define KG_STATE_VERSION 2
 #define KG_PROTOCOL 1
+#define KG_FIRMWARE 2           // this firmware's own number, which the app compares with its copy's
+#define KG_STATE_SIZE_1 222     // version 1's state (Keyglow 0.1.0-0.1.1): kept as is when found
 
 #define KG_KEYS 67              // LEDs 0-66 sit under the keys, in LAYOUT order
 #define KG_EDGE 38              // LEDs 67-104 run round the edge: from the corner by Ctrl along the
@@ -18,6 +21,9 @@
 
 #define KG_ON_KEYS 0x01         // kg_state.on: which parts are lit
 #define KG_ON_EDGE 0x02
+
+#define KG_X_CAPS 0x01          // kg_state.extras: Caps Lock's key lit while Caps Lock is on
+#define KG_X_FN 0x02            // the keys that do something with Fn lit while it is held
 
 enum kg_key_mode {
     KG_KEY_OFF = 0,
@@ -57,11 +63,21 @@ typedef struct __attribute__((packed)) {
     kg_zone_t keys;
     kg_zone_t edge;
     uint8_t   perkey[KG_KEYS][3];
+    // version 2
+    uint8_t   extras;           // KG_X_CAPS | KG_X_FN
+    uint8_t   caps[3];          // Caps Lock's colour
+    uint8_t   fn[3];            // the Fn layer's colour
+    uint8_t   idle;             // minutes without a key before the lights go off; 0 never
+    uint8_t   spare[20];        // for settings to come, without a new layout (zeros: off)
 } kg_state_t;
 
-#define KG_STATE_SIZE 222       // EECONFIG_USER_DATA_SIZE in config.h must be this too
+#define KG_STATE_SIZE 250       // EECONFIG_USER_DATA_SIZE in config.h must be this too; the
+                                // protocol's offsets are one byte, so it stays under 256
 
 _Static_assert(sizeof(kg_state_t) == KG_STATE_SIZE, "kg_state_t changed size: update KG_STATE_SIZE");
 
 extern kg_state_t kg_state;
 extern uint16_t   kg_hits[KG_KEYS];  // when each key was last pressed (timer_read() | 1), 0 for long ago
+extern uint32_t   kg_awake_at;       // the last key or change from the app (timer_read32())
+extern bool       kg_fn_keys[KG_KEYS];  // the keys that do something on the Fn layer, and Fn itself
+extern uint8_t    kg_caps_led;       // the LED under Caps Lock

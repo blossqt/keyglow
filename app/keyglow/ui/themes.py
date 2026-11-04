@@ -7,10 +7,12 @@ import time
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QRadialGradient
-from PySide6.QtWidgets import QAbstractButton, QGridLayout, QSizePolicy, QWidget
+from PySide6.QtWidgets import (QAbstractButton, QGridLayout, QHBoxLayout, QMenu, QPushButton, QSizePolicy,
+                               QVBoxLayout, QWidget)
 
 from .. import presets
 from .. import state as st
+from . import suiteicons, suitesettings as ss
 from . import theme
 
 COLUMNS = 4
@@ -73,9 +75,10 @@ def draw_mini(p: QPainter, area: QRectF, lit: list) -> None:
 class ThemeTile(QAbstractButton):
     """One theme: its picture and name. Ringed while the keyboard shows it."""
 
-    def __init__(self, choice: presets.Theme, parent=None):
+    def __init__(self, choice: presets.Theme, menu=None, parent=None):
         super().__init__(parent)
         self.choice = choice
+        self._menu = menu           # for the user's own: called with (tile, global point)
         self.current = False
         self.state = choice.apply(st.State())
         self.setText(choice.name)
@@ -96,6 +99,10 @@ class ThemeTile(QAbstractButton):
 
     def sizeHint(self) -> QSize:
         return QSize(190, 122)
+
+    def contextMenuEvent(self, event) -> None:
+        if self._menu:
+            self._menu(self, event.globalPos())
 
     def paintEvent(self, event) -> None:
         ms = int(time.perf_counter() * 1000) & 0xFFFFFF
@@ -129,28 +136,89 @@ class ThemeTile(QAbstractButton):
 
 
 class ThemesPage(QWidget):
-    """Every theme in a grid; the moving ones are redrawn while the page is in sight."""
+    """Every theme in a grid, and the user's own under them; the moving ones are redrawn while
+    the page is in sight."""
 
-    chosen = Signal(object)     # a presets.Theme
+    chosen = Signal(object)         # a presets.Theme
+    save_asked = Signal()           # save the lighting as it is as a theme
+    rename_asked = Signal(str)      # one of the user's own, by name
+    delete_asked = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        grid = QGridLayout(self)
+        column = QVBoxLayout(self)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(16)
+        grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setSpacing(16)
         self.tiles = []
         for n, choice in enumerate(presets.THEMES):
-            tile = ThemeTile(choice)
-            tile.clicked.connect(lambda _=False, c=choice: self.chosen.emit(c))
+            tile = self._tile(choice)
             grid.addWidget(tile, n // COLUMNS, n % COLUMNS)
-            self.tiles.append(tile)
-        grid.setRowStretch(len(presets.THEMES) // COLUMNS + 1, 1)
+        for n in range(COLUMNS):
+            grid.setColumnStretch(n, 1)
+        column.addLayout(grid)
+
+        head = QHBoxLayout()
+        head.setContentsMargins(0, 8, 0, 0)
+        title = theme.Label('Your themes')
+        title.setFont(theme.text('heading'))
+        head.addWidget(title)
+        head.addStretch(1)
+        self.save_button = QPushButton('Save current lighting')
+        self.save_button.setIcon(suiteicons.icon('plus', theme.colors().text))
+        self.save_button.setCursor(Qt.PointingHandCursor)
+        self.save_button.clicked.connect(self.save_asked)
+        head.addWidget(self.save_button)
+        column.addLayout(head)
+        self.none_note = ss.note('Lighting you save shows here. Right-click one of yours to rename or delete it.')
+        column.addWidget(self.none_note)
+        self.own_grid = QGridLayout()
+        self.own_grid.setContentsMargins(0, 0, 0, 0)
+        self.own_grid.setSpacing(16)
+        for n in range(COLUMNS):
+            self.own_grid.setColumnStretch(n, 1)
+        column.addLayout(self.own_grid)
+        column.addStretch(1)
+        self.own_tiles = []
+        self._state = st.State()
         self._clock = QTimer(self)
         self._clock.setInterval(33)
         self._clock.timeout.connect(self._tick)
 
+    def _tile(self, choice: presets.Theme) -> ThemeTile:
+        tile = ThemeTile(choice, self._own_menu if choice.own else None)
+        tile.clicked.connect(lambda _=False, c=choice: self.chosen.emit(c))
+        self.tiles.append(tile)
+        return tile
+
+    def show_saved(self, themes: list) -> None:
+        """The user's own themes, oldest first."""
+        for tile in self.own_tiles:
+            self.tiles.remove(tile)
+            self.own_grid.removeWidget(tile)
+            tile.deleteLater()
+        self.own_tiles = []
+        for n, choice in enumerate(themes):
+            tile = self._tile(choice)
+            tile.setToolTip(f'{choice.name}. Right-click to rename or delete it.')
+            self.own_grid.addWidget(tile, n // COLUMNS, n % COLUMNS)
+            self.own_tiles.append(tile)
+        self.none_note.setVisible(not themes)
+        self.mark(self._state)
+
+    def _own_menu(self, tile: ThemeTile, at) -> None:
+        menu = QMenu(self)
+        menu.addAction(suiteicons.icon('edit', theme.colors().text), 'Rename',
+                       lambda: self.rename_asked.emit(tile.choice.name))
+        menu.addAction(suiteicons.icon('trash', theme.colors().text), 'Delete',
+                       lambda: self.delete_asked.emit(tile.choice.name))
+        menu.exec(at)
+
     def mark(self, state: st.State) -> None:
         """Rings the theme the keyboard shows, if any."""
+        self._state = state
         for tile in self.tiles:
             tile.set_current(tile.choice.shown_by(state))
 

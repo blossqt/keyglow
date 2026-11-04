@@ -4,6 +4,8 @@ RGB_MATRIX_EFFECT(keyglow)
 
 #ifdef RGB_MATRIX_CUSTOM_EFFECT_IMPLS
 
+#include "action_layer.h"
+#include "host.h"
 #include "keyglow.h"
 
 // A zone's clock: 0-255 going round, about 64 s a turn at speed 0 and 1 s at 255.
@@ -122,10 +124,24 @@ static void kg_edge(uint8_t i, uint8_t *out) {
 
 static bool keyglow(effect_params_t *params) {
     RGB_MATRIX_USE_LIMITS(led_min, led_max);
+    bool idle = kg_state.idle && timer_elapsed32(kg_awake_at) > (uint32_t)kg_state.idle * 60000;
+    bool fn   = (kg_state.extras & KG_X_FN) && layer_state_is(1);
+    bool caps = (kg_state.extras & KG_X_CAPS) && host_keyboard_led_state().caps_lock;
     for (uint8_t i = led_min; i < led_max; i++) {
         uint8_t rgb[3] = {0, 0, 0};
         uint8_t bright = 0;
-        if (i < KG_FIRST_EDGE) {
+        if (idle) {
+            // every light off until the next key
+        } else if (i < KG_FIRST_EDGE && fn) {
+            // the Fn layer: its keys in its colour, the rest dark, whatever the keys' lighting
+            if (kg_fn_keys[i]) {
+                kg_copy(kg_state.fn, rgb);
+                bright = 255;
+            }
+        } else if (i == kg_caps_led && caps) {
+            kg_copy(kg_state.caps, rgb);
+            bright = 255;
+        } else if (i < KG_FIRST_EDGE) {
             if (kg_state.on & KG_ON_KEYS) {
                 kg_key(i, rgb);
                 bright = kg_state.keys.bright;
