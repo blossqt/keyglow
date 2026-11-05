@@ -13,7 +13,7 @@ from . import device
 from . import state as st
 
 LOOK_EVERY = 1.5        # s between looks for a keyboard while none is open
-CHECK_EVERY = 2.0       # s between checks that an open keyboard is still there
+CHECK_EVERY = 1.0       # s between looks at an open keyboard: still there, and changed on it?
 SAVE_AFTER = 0.8        # s after the last change, the keyboard saves
 
 
@@ -36,6 +36,7 @@ class Link(QObject):
         self.current = device.ABSENT
         self.outdated = False           # the keyboard found runs older Keyglow firmware than ours
         self.missing = False
+        self.firmware = 0               # its KG_FIRMWARE
 
     # --- from the window --------------------------------------------------------------------
 
@@ -105,6 +106,7 @@ class Link(QObject):
         self.keyboard = keyboard
         self.outdated = keyboard.outdated
         self.missing = keyboard.size != st.STATE_SIZE     # its firmware has no Keyboard tab settings
+        self.firmware = keyboard.firmware
         with self._wake:
             self._wanted = None         # the keyboard's own lighting wins over what the window had
         self._sent = lighting.pack()
@@ -153,11 +155,27 @@ class Link(QObject):
                     dirty_at = None
                 if now - checked > CHECK_EVERY:
                     checked = now
-                    self.keyboard.hello()
+                    if dirty_at is None:
+                        self._follow()          # still there, and what changed on it (Fn keys)
+                    else:
+                        self.keyboard.hello()
             except Exception as error:
                 self.failed.emit(str(error))
                 self._close()
                 self._set(device.ABSENT)
+
+    def _follow(self) -> None:
+        """Reads the keyboard's lighting, and hands it to the window if it changed there - Fn+X,
+        Fn+W, Fn+S, Fn+Z - unless the window has a change of its own on the way, which wins."""
+        fresh = self.keyboard.read_state()
+        size = self.keyboard.size
+        if fresh.pack()[:size] == self._sent[:size]:
+            return
+        with self._wake:
+            if self._wanted is not None:
+                return
+            self._sent = fresh.pack()
+        self.loaded.emit(fresh)
 
     def _job(self, job: str) -> None:
         if job == 'defaults':

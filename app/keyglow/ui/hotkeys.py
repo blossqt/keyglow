@@ -14,6 +14,7 @@ KEYBOARD = [
         ('Fn+W', 'Brighter'),
         ('Fn+S', 'Dimmer'),
         ('Fn+Z', 'Light everything, only the keys, only the base, or nothing'),
+        ('Fn+X', 'Turn every light off, or back on'),
     ]),
     ('Function and media keys', [
         ('Fn+1', 'F1, with Fn+2 to Fn+= for F2 to F12'),

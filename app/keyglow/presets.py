@@ -26,6 +26,7 @@ class Theme:
         """The state with this theme: master brightness (and per-key colours it doesn't set) kept."""
         new = state.copy()
         new.on = self.on
+        new.dark = 0                # a theme chosen is a theme to see
         new.keys = st.Zone(**vars(self.keys))
         new.edge = st.Zone(**vars(self.edge))
         if self.perkey is not None:

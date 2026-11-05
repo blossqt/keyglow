@@ -12,13 +12,13 @@ STATE_VERSION = 2
 PROTOCOL = 1
 STATE_SIZE = 250
 OLD_SIZE = 222      # version 1's state, which Keyglow's first firmware (0.1.0-0.1.1) keeps
-FIRMWARE = 4        # the firmware Keyglow carries (KG_FIRMWARE); a keyboard on less is offered it
+FIRMWARE = 5        # the firmware Keyglow carries (KG_FIRMWARE); a keyboard on less is offered it
 
 KEYS = 67           # LEDs 0-66, under the keys in layout order
 EDGE = 38           # LEDs 67-104, round the edge
 ON_KEYS, ON_EDGE = 0x01, 0x02
 X_CAPS, X_FN = 0x01, 0x02     # State.extras: Caps Lock's light, the Fn layer's lights
-SPARE = 20
+SPARE = 19
 IDLE_CHOICES = (1, 2, 5, 10, 15, 30, 60)     # minutes
 
 # Effects, by the firmware's numbers. 0 is "off", which the app shows as a part switched off.
@@ -92,12 +92,13 @@ class State:
     caps: RGB = (255, 255, 255)
     fn: RGB = (255, 209, 220)
     idle: int = 10                  # minutes without a key before the lights go off; 0 never
+    dark: int = 0                   # every light off (Fn+X; firmware 5), whatever the rest says
     spare: bytes = bytes(SPARE)     # kept as the keyboard has it
 
     def pack(self) -> bytes:
         data = bytes((STATE_VERSION, self.on, self.master)) + self.keys.pack() + self.edge.pack()
         data += b''.join(bytes(c) for c in self.perkey)
-        data += bytes((self.extras, *self.caps, *self.fn, self.idle)) + bytes(self.spare)
+        data += bytes((self.extras, *self.caps, *self.fn, self.idle, self.dark)) + bytes(self.spare)
         assert len(data) == STATE_SIZE
         return data
 
@@ -112,7 +113,8 @@ class State:
         if len(data) == STATE_SIZE:
             x = data[OLD_SIZE:]
             state.extras, state.caps, state.fn, state.idle = x[0], tuple(x[1:4]), tuple(x[4:7]), x[7]
-            state.spare = bytes(x[8:8 + SPARE])
+            state.dark = x[8]
+            state.spare = bytes(x[9:9 + SPARE])
         return state
 
     def copy(self) -> 'State':
@@ -125,7 +127,7 @@ FN_KEYS = frozenset(
     list(range(0, 13)) + [14]                   # ` F1-F12, Mute
     + [17, 22, 23, 25, 26, 27, 29]              # brighter, USB port, USB power, PrtSc, ScrLk, Pause, End
     + [32, 43]                                  # dimmer, volume up
-    + [45, 49, 50, 51, 56, 57]                  # lit parts, bootloader, NKRO, debug, PgUp, volume down
+    + [45, 46, 49, 50, 51, 56, 57]              # lit parts, lights off, bootloader, NKRO, debug, PgUp, vol down
     + [63, 64, 65, 66])                         # Fn, Home, PgDn, End
 CAPS_KEY = 30
 # Lit for Caps Lock: its own key, and the keys right of it (A) and below it (Left Shift), whose
@@ -267,6 +269,8 @@ def colors(state: State, ms: int, pressed: dict | None = None, caps: bool = Fals
     """Every LED's colour at a moment, as the keyboard shows it: the keys' 67, then the edge's 38.
     pressed: LED -> ms since it was pressed, for the effect that lights pressed keys. caps: Caps
     Lock is on; fn: Fn is held (each shown only if the state lights it)."""
+    if state.dark:
+        return [BLACK] * (KEYS + EDGE)
     pressed = pressed or {}
     fn = fn and bool(state.extras & X_FN)
     caps = caps and bool(state.extras & X_CAPS)

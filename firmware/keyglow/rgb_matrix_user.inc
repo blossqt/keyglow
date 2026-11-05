@@ -130,8 +130,8 @@ static bool keyglow(effect_params_t *params) {
     for (uint8_t i = led_min; i < led_max; i++) {
         uint8_t rgb[3] = {0, 0, 0};
         uint8_t bright = 0;
-        if (idle) {
-            // every light off until the next key
+        if (idle || kg_state.dark) {
+            // every light off: until the next key (idle), or until Fn+X again (dark)
         } else if (i < KG_FIRST_EDGE && fn) {
             // the Fn layer: its keys in its colour, the rest dark, whatever the keys' lighting
             if (kg_fn_keys[i]) {

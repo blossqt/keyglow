@@ -18,6 +18,7 @@ enum alt_keycodes {
     KG_UP,                 // Brighter
     KG_DOWN,               // Dimmer
     KG_PARTS,              // All lit, keys only, edge only, off
+    KG_DARK,               // Every light off, or back on
 };
 
 // clang-format off
@@ -33,7 +34,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
         KC_GRV,  KC_F1,   KC_F2,   KC_F3,   KC_F4,   KC_F5,   KC_F6,   KC_F7,   KC_F8,   KC_F9,   KC_F10,  KC_F11,  KC_F12,  _______, KC_MUTE,
         _______, _______, KG_UP,   _______, _______, _______, _______, U_T_AUTO,U_T_AGCR,_______, KC_PSCR, KC_SCRL, KC_PAUS, _______, KC_END,
         _______, _______, KG_DOWN, _______, _______, _______, _______, _______, _______, _______, _______, _______,          _______, KC_VOLU,
-        _______, KG_PARTS,_______, _______, _______, MD_BOOT, NK_TOGG, DBG_TOG, _______, _______, _______, _______,          KC_PGUP, KC_VOLD,
+        _______, KG_PARTS,KG_DARK, _______, _______, MD_BOOT, NK_TOGG, DBG_TOG, _______, _______, _______, _______,          KC_PGUP, KC_VOLD,
         _______, _______, _______,                            _______,                            _______, _______, KC_HOME, KC_PGDN, KC_END
     ),
 };
@@ -58,6 +59,7 @@ static void kg_extra_defaults(kg_state_t *s) {
     s->caps[0] = s->caps[1] = s->caps[2] = 255;
     s->fn[0] = 255, s->fn[1] = 209, s->fn[2] = 220;
     s->idle = 10;
+    s->dark = 0;
     memset(s->spare, 0, sizeof(s->spare));
 }
 
@@ -84,6 +86,7 @@ static void kg_tidy(kg_state_t *s) {
     s->version = KG_STATE_VERSION;
     s->on &= KG_ON_KEYS | KG_ON_EDGE;
     s->extras &= KG_X_CAPS | KG_X_FN;
+    s->dark = s->dark ? 1 : 0;
     if (s->keys.mode >= KG_KEY_MODES) s->keys.mode = KG_KEY_OFF;
     if (s->edge.mode >= KG_EDGE_MODES) s->edge.mode = KG_EDGE_OFF;
 }
@@ -308,6 +311,12 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
         case KG_DOWN:
             if (record->event.pressed) {
                 kg_state.master = kg_state.master < 16 ? 0 : kg_state.master - 16;
+                kg_changed();
+            }
+            return false;
+        case KG_DARK:
+            if (record->event.pressed) {
+                kg_state.dark = !kg_state.dark;
                 kg_changed();
             }
             return false;

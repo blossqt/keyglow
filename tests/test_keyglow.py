@@ -153,9 +153,10 @@ class FirmwareMatchesTest(unittest.TestCase):
         self.assertEqual(again.perkey[5], (1, 2, 3))
         self.assertEqual(again.edge.a, (9, 8, 7))
         self.assertEqual(len(state.pack()), st.STATE_SIZE)
-        state.extras, state.caps, state.fn, state.idle = st.X_FN, (1, 1, 1), (2, 2, 2), 30
+        state.extras, state.caps, state.fn, state.idle, state.dark = st.X_FN, (1, 1, 1), (2, 2, 2), 30, 1
         again = st.State.unpack(state.pack())
-        self.assertEqual((again.extras, again.caps, again.fn, again.idle), (st.X_FN, (1, 1, 1), (2, 2, 2), 30))
+        self.assertEqual((again.extras, again.caps, again.fn, again.idle, again.dark),
+                         (st.X_FN, (1, 1, 1), (2, 2, 2), 30, 1))
 
 
 class ProtocolTest(unittest.TestCase):
@@ -467,6 +468,27 @@ class WindowTest(unittest.TestCase):
             QTest.mouseClick(tabs[n], Qt.LeftButton)
             self.assertEqual(self.window.zone_pages.currentIndex(), n)
             self.assertEqual([t.isChecked() for t in tabs], [i == n for i in range(len(tabs))])
+
+    def test_lights_off(self):
+        """The switch puts every light out on the keyboard; a theme chosen brings them back."""
+        from keyglow import presets
+        controls = self.window.keyboard_controls
+        self.assertTrue(controls.dark_frame.isEnabled())
+        controls.dark_on.setChecked(True)
+        self.assertTrue(_wait_until(lambda: self.fake.state.dark == 1))
+        self.assertTrue(all(c == (0, 0, 0) for c in st.colors(self.window.state, 0, caps=True, fn=True)))
+        self.window.use_theme(presets.THEMES[0])
+        self.assertTrue(_wait_until(lambda: self.fake.state.dark == 0))
+        self.assertFalse(controls.dark_on.isChecked())
+
+    def test_changes_on_the_keyboard_show(self):
+        """Fn+X (or Fn+W, S, Z) on the keyboard: the window follows within a look or two."""
+        dark_at = st.OLD_SIZE + 8
+        self.fake.live[dark_at] = 1
+        self.fake.live[2] = 100                     # master, as Fn+S leaves it
+        self.assertTrue(_wait_until(lambda: self.window.keyboard_controls.dark_on.isChecked(), 4))
+        self.assertEqual(self.window.master.value(), 100)
+        self.assertEqual(self.window.state.dark, 1)
 
     def test_keyboard_settings_reach_keyboard(self):
         controls = self.window.keyboard_controls

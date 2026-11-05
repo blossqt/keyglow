@@ -11,7 +11,7 @@
 
 #define KG_STATE_VERSION 2
 #define KG_PROTOCOL 1
-#define KG_FIRMWARE 4           // this firmware's own number, which the app compares with its copy's
+#define KG_FIRMWARE 5           // this firmware's own number, which the app compares with its copy's
 #define KG_STATE_SIZE_1 222     // version 1's state (Keyglow 0.1.0-0.1.1): kept as is when found
 
 #define KG_KEYS 67              // LEDs 0-66 sit under the keys, in LAYOUT order
@@ -68,7 +68,8 @@ typedef struct __attribute__((packed)) {
     uint8_t   caps[3];          // Caps Lock's colour
     uint8_t   fn[3];            // the Fn layer's colour
     uint8_t   idle;             // minutes without a key before the lights go off; 0 never
-    uint8_t   spare[20];        // for settings to come, without a new layout (zeros: off)
+    uint8_t   dark;             // every light off (Fn+X), whatever the rest says (firmware 5)
+    uint8_t   spare[19];        // for settings to come, without a new layout (zeros: off)
 } kg_state_t;
 
 #define KG_STATE_SIZE 250       // EECONFIG_USER_DATA_SIZE in config.h must be this too; the

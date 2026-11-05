@@ -287,6 +287,12 @@ class KeyboardControls(QWidget):
         items.addWidget(self.update_problem)
         column.addWidget(self.update_frame)
 
+        self.dark_frame, items = ss.section('')
+        row, self.dark_on = ss.switch('Turn every light off', 'Fn+X does the same on the keyboard.', False)
+        self.dark_on.toggled.connect(self._changed)
+        items.addWidget(row)
+        column.addWidget(self.dark_frame)
+
         self.caps_frame, items = ss.section('')
         row, self.caps_on = ss.switch('Light Caps Lock while it is on',
                                       'Its colour shows on Caps Lock and on the keys right of it and below it.',
@@ -329,22 +335,25 @@ class KeyboardControls(QWidget):
             frame.installEventFilter(_Hover(window.board, which, frame))
         self.set_outdated(False)
 
-    def set_outdated(self, outdated: bool, missing: bool = False) -> None:
+    def set_outdated(self, outdated: bool, missing: bool = False, firmware: int = st.FIRMWARE) -> None:
         """outdated: Keyglow carries newer firmware than the keyboard's; missing: the keyboard's
-        doesn't have these settings at all (Keyglow's first)."""
+        doesn't have these settings at all (Keyglow's first); firmware: the keyboard's number."""
         self.update_frame.setVisible(outdated)
         self.update_words.setText(
             'These settings need the newer Keyglow firmware on the keyboard. Your lighting stays as it is.'
             if missing else
-            'Keyglow has newer firmware for the keyboard: Caps Lock lights in the colour you choose, and on '
-            'the keys right of it and below it too, so it shows past its keycap. Your lighting stays as it is.')
+            'Keyglow has newer firmware for the keyboard: Fn+X turns every light off and on, and Caps Lock '
+            'lights the keys right of it and below it too, so it shows past its keycap. Your lighting stays '
+            'as it is.')
         for frame in (self.caps_frame, self.fn_frame, self.idle_frame):
             frame.setEnabled(not missing)
+        self.dark_frame.setEnabled(firmware >= 5)
 
     def fill(self) -> None:
         state = self.window_.state
         self._filling = True
         try:
+            self.dark_on.setChecked(bool(state.dark))
             self.caps_on.setChecked(bool(state.extras & st.X_CAPS))
             self.fn_on.setChecked(bool(state.extras & st.X_FN))
             self.caps.set_color(state.caps)
@@ -372,6 +381,7 @@ class KeyboardControls(QWidget):
         state = self.window_.state
         state.extras = (st.X_CAPS if self.caps_on.isChecked() else 0) | (st.X_FN if self.fn_on.isChecked() else 0)
         state.idle = self.idle.currentData() if self.idle_on.isChecked() else 0
+        state.dark = 1 if self.dark_on.isChecked() else 0
         self._shown()
         self.window_.changed()
 
@@ -572,7 +582,7 @@ class Window(QWidget):
         self.keys_controls.fill()
         self.edge_controls.fill()
         self.keyboard_controls.fill()
-        self.keyboard_controls.set_outdated(self.link.outdated, self.link.missing)
+        self.keyboard_controls.set_outdated(self.link.outdated, self.link.missing, self.link.firmware)
         if self.flash is None and self.status == device.READY:
             self.where.setText('ALT connected, new firmware ready' if self.link.outdated else 'ALT connected')
         self.master.blockSignals(True)
@@ -591,6 +601,7 @@ class Window(QWidget):
         self.state = choice.apply(self.state)
         self.keys_controls.fill()
         self.edge_controls.fill()
+        self.keyboard_controls.fill()
         self.changed()
 
     # --- the user's own themes ----------------------------------------------------------------
