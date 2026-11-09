@@ -118,8 +118,6 @@ class ThemeTile(QAbstractButton):
         p.setBrush(fill)
         if self.current:
             p.setPen(QPen(QColor(theme.ACCENT if dark else theme.ROSE), 2))
-        elif self.hasFocus() and self.property('_focus_ring'):
-            p.setPen(QPen(QColor(theme.ROSE), 1.5))
         else:
             p.setPen(QPen(theme.colors().border, 1))
         p.drawRoundedRect(tile, 12, 12)
