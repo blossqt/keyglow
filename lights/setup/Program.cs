@@ -1,5 +1,5 @@
 // Keyglow Lights' setup: installs the service into Program Files, or removes it. Keyglow runs it as
-// administrator (Windows asks first) from its PC tab.
+// administrator (Windows asks first) from its Devices tab.
 //
 // Keyglow's own folder is the user's to write in, and the service runs as the system: so every file
 // is read once, checked against the SHA-256 built into this program (FileHashes, made by

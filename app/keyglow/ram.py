@@ -9,7 +9,7 @@ lays what it wants in shared memory (ASK, which signed-in users may write), sets
 The service stops itself after a minute unasked; Keyglow starts it again when it next wants
 something (signed-in users may start it, nothing more). Its setup (lights\\KeyglowLightsSetup.exe)
 installs it into Program Files - checking every file against hashes built into itself - and is run
-with administrator permission from the PC tab (run_setup).
+with administrator permission from the Devices tab (run_setup).
 """
 
 from __future__ import annotations
@@ -33,9 +33,10 @@ STATUS_SIZE, ASK_SIZE = 360, 64
 LEDS = 12               # colours a request carries, one per light (sticks have 6 to 12)
 INSTALLED = Path(os.environ.get('ProgramFiles', r'C:\Program Files')) / 'Keyglow Lights' / 'KeyglowLights.exe'
 SETUP_ANSWERS = {
-    0: '', 2: 'It needs administrator permission.', 3: 'Its files aren’t as they were built: reinstall Keyglow.',
-    4: 'The old one wouldn’t stop: restart Windows and try again.', 5: 'Its files couldn’t be copied.',
-    6: 'Windows wouldn’t register the service.',
+    0: '', 2: 'Administrator rights are required.',
+    3: 'The service files do not match this build of Keyglow. Reinstall Keyglow.',
+    4: 'The existing service did not stop. Restart Windows and try again.',
+    5: 'The service files could not be copied.', 6: 'Windows did not register the service.',
 }
 
 # The service's answers (Status in Program.cs), and two of Keyglow's own
@@ -52,11 +53,12 @@ _SC_MANAGER_CONNECT, _SERVICE_QUERY_STATUS, _SERVICE_START = 0x0001, 0x0004, 0x0
 _ERROR_SERVICE_ALREADY_RUNNING, _ERROR_CANCELLED = 1056, 1223
 _STATES = {1: 'stopped', 2: 'starting', 3: 'stopping', 4: 'running', 5: 'continuing', 6: 'pausing', 7: 'paused'}
 
-NAMES = {   # product id's high byte -> what the stick is
-    0x01: 'Corsair Vengeance RGB Pro', 0x02: 'Corsair Dominator Platinum RGB', 0x03: 'Corsair Vengeance RGB Pro SL',
-    0x04: 'Corsair Vengeance RGB RS', 0x06: 'Corsair Dominator Platinum RGB', 0x07: 'Corsair Vengeance RGB',
-    0x08: 'Corsair Dominator Titanium RGB', 0x09: 'Corsair Vengeance RGB', 0x0A: 'Corsair Vengeance Shugo',
-    0x0B: 'Corsair Vengeance RGB RS',
+NAMES = {   # product id's high byte -> the model
+    0x01: 'Corsair Vengeance RGB Pro DDR4', 0x02: 'Corsair Dominator Platinum RGB DDR4',
+    0x03: 'Corsair Vengeance RGB Pro SL DDR4', 0x04: 'Corsair Vengeance RGB RS DDR4',
+    0x06: 'Corsair Dominator Platinum RGB DDR5', 0x07: 'Corsair Vengeance RGB DDR5',
+    0x08: 'Corsair Dominator Titanium RGB DDR5', 0x09: 'Corsair Vengeance RGB DDR5',
+    0x0A: 'Corsair Vengeance Shugo Series DDR5', 0x0B: 'Corsair Vengeance RGB RS DDR5',
 }
 
 
@@ -352,23 +354,23 @@ def run_setup(action: str) -> str:
     administrator permission - Windows asks first. Waits for it; what went wrong, if anything."""
     setup = bundled_folder() / 'KeyglowLightsSetup.exe'
     if not setup.is_file():
-        return 'Keyglow Lights isn’t in this build of Keyglow.'
+        return 'This build of Keyglow does not include the Keyglow Lights service.'
     info = _ShellExecuteInfo()
     info.cbSize = ctypes.sizeof(info)
     info.fMask = 0x00000040 | 0x00000100            # SEE_MASK_NOCLOSEPROCESS, SEE_MASK_NOASYNC
     info.lpVerb, info.lpFile, info.lpParameters = 'runas', str(setup), action
     info.lpDirectory, info.nShow = str(setup.parent), 0
     if not _shell.ShellExecuteExW(ctypes.byref(info)):
-        return '' if ctypes.get_last_error() == _ERROR_CANCELLED else 'Its setup wouldn’t start.'
+        return '' if ctypes.get_last_error() == _ERROR_CANCELLED else 'The service setup did not start.'
     if not info.hProcess:
-        return 'Its setup wouldn’t start.'
+        return 'The service setup did not start.'
     try:
         _kernel.WaitForSingleObject(info.hProcess, 0xFFFFFFFF)
         code = wintypes.DWORD()
         _kernel.GetExitCodeProcess(info.hProcess, ctypes.byref(code))
     finally:
         _kernel.CloseHandle(info.hProcess)
-    return SETUP_ANSWERS.get(code.value, f'Its setup failed ({code.value}).')
+    return SETUP_ANSWERS.get(code.value, f'The service setup failed (code {code.value}).')
 
 
 class FakeLights:

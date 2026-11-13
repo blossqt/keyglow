@@ -462,7 +462,7 @@ class WindowTest(unittest.TestCase):
         """Back to a tab left a moment ago: once, it took a second click (no exclusive group)."""
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
-        tabs = [self.window.themes_tab, self.window.keys_tab, self.window.edge_tab, self.window.pc_tab,
+        tabs = [self.window.themes_tab, self.window.keys_tab, self.window.edge_tab, self.window.devices_tab,
                 self.window.keyboard_tab, self.window.hotkeys_tab]
         for n in (1, 0, 1, 2, 0, 5, 3, 4, 4, 0):
             QTest.mouseClick(tabs[n], Qt.LeftButton)

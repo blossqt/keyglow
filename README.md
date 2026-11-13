@@ -22,16 +22,17 @@ write it back.
 On the keyboard: Fn+W and Fn+S change the brightness, and Fn+Z goes through all lights, keys only,
 base only and off.
 
-## The PC's lights
+## Devices and RGB Sync
 
-The PC tab sets the memory's and the motherboard's lights too. Each part either takes the keyboard's
-lighting (Same as the keyboard: the keys' effect and colours, or the base light's while the keys are
-off, in the nearest effect the part has) or has its own effect. The parts keep the lighting
-themselves, as the keyboard does.
+The Devices tab lists every lit device: the keyboard, the memory and the motherboard. RGB Sync is
+one lighting shared by every device that has it on, as peers. A theme sets it; while the keyboard
+is in it, the Keys and Base light tabs set it too. Each device shows it in its nearest effect. A
+device with RGB Sync off keeps a lighting of its own: the keyboard's from its own tabs, the memory's
+and motherboard's from the Devices tab. Every device keeps its lighting itself.
 
 - **Memory:** Corsair Vengeance RGB and Dominator sticks (DDR4 and DDR5). A stick's lights hang off
   the PC's SMBus, which only a driver reaches, so Keyglow carries a small service of its own,
-  Keyglow Lights (`lights/`, C#), installed from the PC tab with Windows' permission. It reaches
+  Keyglow Lights (`lights/`, C#), installed from the Devices tab with Windows' permission. It reaches
   the SMBus through [PawnIO](https://pawnio.eu) (which FanControl installs too), runs as the system
   only while the lighting changes, and stops itself after a minute. Keyglow talks to it through two
   blocks of shared memory, not a port or a pipe. iCUE sets the memory's lights itself, so quit it.

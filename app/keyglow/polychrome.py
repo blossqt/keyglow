@@ -15,8 +15,8 @@ SET_ZONE, READ_ZONE, COMMIT, READ_HEADER = 0x10, 0x11, 0x12, 0x14
 LED_COUNTS, RG_SWAP, PRESENT = 0x02, 0x03, 0x01
 ABSENT_ZONE = 0x1E
 
-ZONE_NAMES = ('RGB header 1', 'RGB header 2', 'Addressable header 1', 'Addressable header 2', 'Chipset',
-              'I/O cover', 'Board', 'Addressable header 3')
+ZONE_NAMES = ('RGB header 1', 'RGB header 2', 'ARGB header 1', 'ARGB header 2', 'Chipset', 'I/O cover',
+              'Onboard', 'ARGB header 3')
 
 # The controller's effects, by its numbers
 OFF, STATIC, BREATHING, STROBE, SPECTRUM, RANDOM, MUSIC, WAVE, SPRING, STACK, CRAM, SCAN, NEON, WATER, RAINBOW = \

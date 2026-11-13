@@ -1,9 +1,13 @@
-"""The PC's own lights, beside the keyboard's: the memory sticks (through Keyglow Lights, ram.py)
-and the motherboard with its headers (polychrome.py).
+"""RGB Sync, and the PC's own lights beside the keyboard's: the memory sticks (through Keyglow
+Lights, ram.py) and the motherboard with its headers (polychrome.py).
 
-Each part either follows the keyboard - its theme's effect and colours, translated into the
-nearest effect the part has - or has its own. Both kinds of setting are kept in
-%APPDATA%\\Keyglow\\pc.json; the parts keep the lighting themselves."""
+RGB Sync is one lighting shared by every device that has it on - the keyboard, the memory, the
+motherboard - as peers: a theme chosen sets it, and while the keyboard is in it, so do the
+keyboard's own changes. A device with RGB Sync off has a lighting of its own (the keyboard's is
+set on its own tabs). The shared lighting is kept in the keyboard's shape (st.State), the richest
+of them, and each other device shows it in the nearest effect it has (follow).
+
+All of it is kept in %APPDATA%\\Keyglow\\pc.json; the devices keep their lighting themselves."""
 
 from __future__ import annotations
 
@@ -73,15 +77,27 @@ class Part:
         return cls(**known)
 
 
-# --- following the keyboard -----------------------------------------------------------------
+# --- the shared lighting --------------------------------------------------------------------
 
 def _common(colours) -> tuple:
     return Counter(tuple(c) for c in colours).most_common(1)[0][0]
 
 
+def with_lighting(keyboard: st.State, lighting: st.State) -> st.State:
+    """The keyboard with the shared lighting: its effects, colours and brightness; its own
+    settings (Caps Lock, Fn, idle, all-off) kept."""
+    new = keyboard.copy()
+    new.on, new.master = lighting.on, lighting.master
+    new.keys = st.Zone(**vars(lighting.keys))
+    new.edge = st.Zone(**vars(lighting.edge))
+    new.perkey = list(lighting.perkey)
+    return new
+
+
 def follow(part: str, keyboard: st.State) -> Part:
-    """The lighting a part takes from the keyboard: the keys' effect - or the base light's while
-    the keys are off - in the nearest effect the part has, at the same brightness."""
+    """A part's view of the shared lighting (kept in the keyboard's shape): the keys' effect - or
+    the base light's while the keys are off - in the nearest effect the part has, at the same
+    brightness."""
     if keyboard.dark:
         return Part(sync=True, on=False)
     if keyboard.on & st.ON_KEYS:
@@ -156,27 +172,54 @@ def _file():
     return data_folder() / 'pc.json'
 
 
-def load() -> dict:
-    """{'ram': Part, 'board': Part}: what was kept, else both following the keyboard."""
-    parts = {'ram': Part(), 'board': Part()}
+def _read() -> dict:
     try:
         data = json.loads(_file().read_text(encoding='utf-8'))
-        for name in parts:
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def load() -> dict:
+    """{'ram': Part, 'board': Part}: what was kept, else both in RGB Sync."""
+    parts = {'ram': Part(), 'board': Part()}
+    data = _read()
+    for name in parts:
+        try:
             if isinstance(data.get(name), dict):
                 parts[name] = Part.from_dict(data[name])
-    except (OSError, ValueError, TypeError):
-        pass
+        except (ValueError, TypeError):
+            pass
     return parts
 
 
-def save(parts: dict) -> None:
+def load_sync() -> tuple[bool, st.State | None]:
+    """(whether the keyboard is in RGB Sync, the shared lighting as last kept - None if never)."""
+    data = _read()
+    lighting = None
+    try:
+        lighting = st.State.unpack(bytes.fromhex(data['lighting']))
+    except (KeyError, ValueError, TypeError):
+        pass
+    return data.get('keyboard_sync', True) is not False, lighting
+
+
+def save(parts: dict, keyboard_sync: bool | None = None, lighting: st.State | None = None) -> None:
+    """Keeps the parts' settings, and the keyboard's RGB Sync and the shared lighting if given
+    (else as they were kept)."""
+    data = _read()
+    data.update({name: asdict(part) for name, part in parts.items()})
+    if keyboard_sync is not None:
+        data['keyboard_sync'] = keyboard_sync
+    if lighting is not None:
+        data['lighting'] = lighting.pack().hex()
     try:
         path = _file()
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({name: asdict(part) for name, part in parts.items()}, indent=1),
-                        encoding='utf-8')
+        path.write_text(json.dumps(data, indent=1), encoding='utf-8')
     except OSError:
         pass
 
 
-__all__ = ['Part', 'follow', 'resolved', 'ram_request', 'board_effect', 'load', 'save', 'replace']
+__all__ = ['Part', 'follow', 'resolved', 'with_lighting', 'ram_request', 'board_effect', 'load', 'load_sync',
+           'save', 'replace']

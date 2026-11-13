@@ -16,7 +16,7 @@ from . import theme
 from .board import Board
 from .icons import app_icon
 from .hotkeys import GROUPS as HOTKEYS, HotkeysPage
-from .pc import PcPage
+from .pc import DevicesPage
 from .themes import ThemesPage
 
 SWATCHES = ['#ffffff', '#ffd1dc', '#c2255c', '#ff2a2a', '#ff7a00', '#ffd400', '#3ddc5a', '#00d5ff',
@@ -399,6 +399,7 @@ class Window(QWidget):
         self.link = link
         self.pc_link = pc_link
         self.pc_parts = pc.load()
+        self.keyboard_sync, self.sync_state = pc.load_sync()
         self.state = st.State()
         self.status = device.ABSENT
         self.flash: flasher.Flash | None = None
@@ -469,15 +470,16 @@ class Window(QWidget):
         self.edge_controls.fill()
         self.keyboard_controls.fill()
         self.master.setValue(self.state.master)
-        self.themes.mark(self.state)
-        self.pc_page.fill(self.pc_parts)
+        self.themes.mark(self.sync_state if self.sync_state is not None else self.state)
+        self.devices_page.fill(self.pc_parts, self.keyboard_sync)
+        self.devices_page.keyboard_sync.connect(self.set_keyboard_sync)
         if pc_link is not None:
-            pc_link.board.connect(self.pc_page.show_board)
-            pc_link.memory.connect(self.pc_page.show_memory)
-            pc_link.icue.connect(self.pc_page.show_icue)
-            pc_link.setup_done.connect(self.pc_page.setup_done)
-            self.pc_page.setup_asked.connect(pc_link.setup)
-        self.pc_page.lighting.connect(self._pc_lighting)
+            pc_link.board.connect(self.devices_page.show_board)
+            pc_link.memory.connect(self.devices_page.show_memory)
+            pc_link.icue.connect(self.devices_page.show_icue)
+            pc_link.setup_done.connect(self.devices_page.setup_done)
+            self.devices_page.setup_asked.connect(pc_link.setup)
+        self.devices_page.lighting.connect(self._pc_lighting)
 
     # --- pages ------------------------------------------------------------------------------
 
@@ -489,10 +491,10 @@ class Window(QWidget):
         self.themes_tab = QPushButton('Themes')
         self.keys_tab = QPushButton('Keys')
         self.edge_tab = QPushButton('Base light')
-        self.pc_tab = QPushButton('PC')
+        self.devices_tab = QPushButton('Devices')
         self.keyboard_tab = QPushButton('Keyboard')
         self.hotkeys_tab = QPushButton('Hotkeys')
-        self.tabs = ss.Segmented([self.themes_tab, self.keys_tab, self.edge_tab, self.pc_tab, self.keyboard_tab,
+        self.tabs = ss.Segmented([self.themes_tab, self.keys_tab, self.edge_tab, self.devices_tab, self.keyboard_tab,
                                   self.hotkeys_tab])
         self.themes_tab.setChecked(True)
         column.addWidget(self.tabs, 0, Qt.AlignLeft)
@@ -508,8 +510,8 @@ class Window(QWidget):
         self.zone_pages.addWidget(ss.scrolled(self.themes))
         self.zone_pages.addWidget(ss.scrolled(self.keys_controls))
         self.zone_pages.addWidget(ss.scrolled(self.edge_controls))
-        self.pc_page = PcPage()
-        self.zone_pages.addWidget(ss.scrolled(self.pc_page))
+        self.devices_page = DevicesPage()
+        self.zone_pages.addWidget(ss.scrolled(self.devices_page))
         self.keyboard_controls = KeyboardControls(self)
         self.zone_pages.addWidget(ss.scrolled(self.keyboard_controls))
         self.hotkeys = HotkeysPage()
@@ -518,7 +520,7 @@ class Window(QWidget):
         # unchecked it rather than going back to it
         self.tab_group = QButtonGroup(self)
         self.tab_group.setExclusive(True)
-        for n, tab in enumerate((self.themes_tab, self.keys_tab, self.edge_tab, self.pc_tab, self.keyboard_tab,
+        for n, tab in enumerate((self.themes_tab, self.keys_tab, self.edge_tab, self.devices_tab, self.keyboard_tab,
                                  self.hotkeys_tab)):
             self.tab_group.addButton(tab, n)
             tab.toggled.connect(lambda on, n=n: on and self.zone_pages.setCurrentIndex(n))
@@ -603,35 +605,64 @@ class Window(QWidget):
         self.master.setValue(state.master)
         self.master.blockSignals(False)
         self.board.show_state(state)
-        self.themes.mark(state)
+        if self.keyboard_sync or self.sync_state is None:
+            self.sync_state = state.copy()      # in RGB Sync, the keyboard holds the shared lighting
+        self.themes.mark(self.sync_state)
         self._pc_follow()
 
     def changed(self) -> None:
-        """The window's lighting changed: the picture, the keyboard and the PC's parts that follow
-        it follow."""
+        """The keyboard's lighting changed in the window: the picture and the keyboard follow, and
+        while the keyboard is in RGB Sync, so does every other device in it."""
         self.board.show_state(self.state)
-        self.themes.mark(self.state)
         self.link.want(self.state)
-        self._pc_follow()
+        if self.keyboard_sync:
+            self.sync_state = self.state.copy()
+            self._pc_follow()
+        self.themes.mark(self.sync_state if self.sync_state is not None else self.state)
 
-    # --- the PC's lights --------------------------------------------------------------------
+    # --- RGB Sync and the PC's lights ---------------------------------------------------------
 
     def _pc_follow(self) -> None:
-        """The parts that follow the keyboard take its lighting as it is now."""
-        if self.pc_link is None:
+        """The parts in RGB Sync take the shared lighting as it is now."""
+        if self.pc_link is None or self.sync_state is None:
             return
         for name, own in self.pc_parts.items():
             if own.sync:
-                self.pc_link.want(name, pc.follow(name, self.state))
+                self.pc_link.want(name, pc.follow(name, self.sync_state))
 
     def _pc_lighting(self, name: str, own) -> None:
-        """A part's own setting changed on the PC tab: kept, and shown."""
+        """A part's setting changed on the Devices tab: kept, and shown."""
         self.pc_parts[name] = own
         pc.save(self.pc_parts)
         if self.pc_link is not None:
-            self.pc_link.want(name, pc.resolved(name, own, self.state))
+            self.pc_link.want(name, pc.resolved(name, own, self.sync_state or self.state))
+
+    def set_keyboard_sync(self, on: bool) -> None:
+        """The keyboard joins RGB Sync (taking the shared lighting) or leaves it (keeping what it
+        shows, which stays the shared lighting until a theme changes it)."""
+        if on == self.keyboard_sync:
+            return
+        self.keyboard_sync = on
+        if on and self.sync_state is not None:
+            self.state = pc.with_lighting(self.state, self.sync_state)
+            self.keys_controls.fill()
+            self.edge_controls.fill()
+            self.master.blockSignals(True)
+            self.master.setValue(self.state.master)
+            self.master.blockSignals(False)
+            self.changed()
+        elif self.sync_state is None:
+            self.sync_state = self.state.copy()
+        pc.save(self.pc_parts, on, self.sync_state)
 
     def use_theme(self, choice) -> None:
+        """A theme sets the shared lighting: every device in RGB Sync takes it."""
+        self.sync_state = choice.apply(self.sync_state if self.sync_state is not None else self.state)
+        if not self.keyboard_sync:
+            self.themes.mark(self.sync_state)
+            self._pc_follow()
+            pc.save(self.pc_parts, False, self.sync_state)
+            return
         self.state = choice.apply(self.state)
         self.keys_controls.fill()
         self.edge_controls.fill()

@@ -1,5 +1,5 @@
-"""The PC tab: the memory's and the motherboard's lights, each following the keyboard or set on
-its own."""
+"""The Devices tab: every lit device - the keyboard, the memory, the motherboard - with its RGB Sync
+switch, and for the memory and motherboard an effect of their own while it is off."""
 
 from __future__ import annotations
 
@@ -11,7 +11,10 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QPushButton, QSlider, QVBo
 from .. import pc, ram
 from . import suitesettings as ss
 
-SYNC_ABOUT = "Takes the keys' effect and colours, or the base light's while the keys are off."
+SYNC = 'RGB Sync'
+SYNC_ABOUT = 'Uses the lighting shared by all devices with RGB Sync on.'
+KEYBOARD_SYNC_ABOUT = ('Uses the lighting shared by all devices with RGB Sync on. While on, changes on the Keys '
+                       'and Base light tabs apply to every synced device.')
 
 
 def _slider(changed) -> QSlider:
@@ -23,17 +26,16 @@ def _slider(changed) -> QSlider:
 
 
 class PartControls(QWidget):
-    """One part: what was found, whether it follows the keyboard, and its own effect if not."""
+    """One device: what was detected, its RGB Sync switch, and its own effect while that is off."""
 
-    changed = Signal(str, object)       # the part, its own lighting (pc.Part)
+    changed = Signal(str, object)       # the part, its setting (pc.Part)
 
-    def __init__(self, part: str, title: str, light_words: str):
+    def __init__(self, part: str, title: str):
         super().__init__()
         from .window import ColorButton
         self.part = part
         self.effects = pc.EFFECTS[part]
         self._filling = False
-        self._found = False
         column = QVBoxLayout(self)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(ss.ITEMS)
@@ -53,14 +55,14 @@ class PartControls(QWidget):
         rows_column = QVBoxLayout(self.settings)
         rows_column.setContentsMargins(0, 0, 0, 0)
         rows_column.setSpacing(ss.ITEMS)
-        row, self.sync = ss.switch('Same as the keyboard', SYNC_ABOUT, True)
+        row, self.sync = ss.switch(SYNC, SYNC_ABOUT, True)
         self.sync.toggled.connect(self._changed)
         rows_column.addWidget(row)
         self.own = QWidget()
         own = QVBoxLayout(self.own)
         own.setContentsMargins(0, 0, 0, 0)
         own.setSpacing(ss.ITEMS)
-        row, self.on = ss.switch(light_words, '', True)
+        row, self.on = ss.switch('Lighting', '', True)
         self.on.toggled.connect(self._changed)
         own.addWidget(row)
         self.form = ss.form()
@@ -91,8 +93,7 @@ class PartControls(QWidget):
         self.buttons.insertWidget(self.buttons.count() - 1, button)
 
     def found(self, where: str, found: bool, problem: str = '') -> None:
-        """What was found (or why nothing): the settings show only for a part that is there."""
-        self._found = found
+        """What was detected (or why nothing was): the settings show only for a device present."""
         self.where.setText(where)
         self.where.setVisible(bool(where))
         self.problem.setText(problem)
@@ -150,13 +151,14 @@ class PartControls(QWidget):
 
 def _sticks(sticks) -> str:
     names = Counter(stick.name for stick in sticks)
-    return ', '.join(f'{count} {name} stick' + ('s' if count > 1 else '') for name, count in names.items())
+    return ', '.join(f'{name} × {count}' for name, count in names.items())
 
 
-class PcPage(QWidget):
-    """The memory and the motherboard."""
+class DevicesPage(QWidget):
+    """The keyboard, the memory and the motherboard."""
 
-    lighting = Signal(str, object)      # a part's own lighting changed (sync or not)
+    lighting = Signal(str, object)      # the memory's or the motherboard's setting changed
+    keyboard_sync = Signal(bool)        # the keyboard's RGB Sync switched
     setup_asked = Signal(str)           # '--install' or '--uninstall'
 
     def __init__(self):
@@ -164,11 +166,19 @@ class PcPage(QWidget):
         column = QVBoxLayout(self)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(ss.ITEMS)
-        self.memory = PartControls('ram', 'Memory', 'Light the memory')
-        self.install = QPushButton('Install Keyglow Lights')
+
+        frame, items = ss.section('Keyboard')
+        items.addWidget(ss.label('Drop ALT', ss.SMALL, role='dim'))
+        row, self.keyboard = ss.switch(SYNC, KEYBOARD_SYNC_ABOUT, True)
+        self.keyboard.toggled.connect(self.keyboard_sync.emit)
+        items.addWidget(row)
+        column.addWidget(frame)
+
+        self.memory = PartControls('ram', 'Memory')
+        self.install = QPushButton('Install service')
         self.install.clicked.connect(lambda: self._setup('--install'))
         self.memory.add_button(self.install)
-        self.board = PartControls('board', 'Motherboard', 'Light the motherboard')
+        self.board = PartControls('board', 'Motherboard')
         for part in (self.memory, self.board):
             part.changed.connect(self.lighting.emit)
             column.addWidget(part)
@@ -179,19 +189,22 @@ class PcPage(QWidget):
         self.show_memory(self._answer)
         self.show_board(None)
 
-    def fill(self, parts: dict) -> None:
+    def fill(self, parts: dict, keyboard_sync: bool = True) -> None:
+        self.keyboard.blockSignals(True)
+        self.keyboard.setChecked(keyboard_sync)
+        self.keyboard.blockSignals(False)
         self.memory.fill(parts['ram'])
         self.board.fill(parts['board'])
 
     def _setup(self, action: str) -> None:
         if not ram.dotnet():
             self.memory.found(self.memory.where.text(), False,
-                              "Keyglow Lights runs on Microsoft's .NET 10 runtime, which isn't installed. Install "
-                              "the .NET 10 Desktop Runtime from Microsoft, then try again.")
+                              'The Keyglow Lights service requires the Microsoft .NET 10 Desktop Runtime, which is '
+                              'not installed.')
             return
         self._installing = True
         self.install.setEnabled(False)
-        self.memory.found('Windows asks for permission to install Keyglow Lights.', False)
+        self.memory.found('Waiting for administrator approval.', False)
         self.setup_asked.emit(action)
 
     def setup_done(self, words: str) -> None:
@@ -209,33 +222,31 @@ class PcPage(QWidget):
             return
         status = answer.status
         found = status == ram.READY
-        install = status == ram.NOT_INSTALLED or (found and ram.outdated())
-        self.install.setText('Update Keyglow Lights' if status != ram.NOT_INSTALLED else 'Install Keyglow Lights')
-        self.install.setVisible(install)
+        update = found and ram.outdated()
+        self.install.setText('Update service' if update else 'Install service')
+        self.install.setVisible(status == ram.NOT_INSTALLED or update)
         if status == ram.READY:
             where = _sticks(answer.sticks)
         elif status == ram.NOT_INSTALLED:
-            where = ('Keyglow reaches the memory through Keyglow Lights, a small service of its own that runs '
-                     'only while the lighting changes. Windows asks for permission to install it.')
+            where = ('Memory lighting requires the Keyglow Lights service, which accesses the SMBus through PawnIO '
+                     'and runs only while lighting changes. Installation requires administrator approval.')
         elif status == ram.NO_PAWNIO:
             where = ''
-            problem = problem or ('Keyglow Lights reaches the memory through PawnIO, which isn’t installed. '
-                                  'FanControl installs it, or get it from pawnio.eu.')
+            problem = problem or 'The Keyglow Lights service requires PawnIO, which is not installed (pawnio.eu).'
         elif status == ram.NO_MEMORY:
-            where = 'No RGB memory Keyglow knows was found. It knows Corsair Vengeance RGB and Dominator sticks.'
+            where = 'No supported RGB memory detected. Supported: Corsair Vengeance RGB, Dominator Platinum RGB, ' \
+                    'Dominator Titanium RGB.'
         elif status == ram.FAILED:
             where = ''
-            problem = problem or f'Keyglow Lights couldn’t reach the memory: {answer.message}.'
+            problem = problem or f'The Keyglow Lights service could not access the memory: {answer.message}.'
         else:
-            where = 'Looking for the memory.'
+            where = 'Detecting memory.'
         if found and self._icue and not problem:
-            problem = ('iCUE is running, and it sets the memory’s lights itself over Keyglow’s. Quit it, '
-                       'and turn off its start with Windows.')
+            problem = 'Corsair iCUE is running and overrides memory lighting. Close iCUE and disable it at startup.'
         self.memory.found(where, found, problem)
 
     def show_board(self, zones) -> None:
         if zones is None:
-            self.board.found('No ASRock Polychrome motherboard found.', False)
+            self.board.found('No supported motherboard detected. Supported: ASRock Polychrome RGB.', False)
             return
-        names = [zone.name for zone in zones]
-        self.board.found('ASRock Polychrome: ' + ', '.join(names), True)
+        self.board.found('ASRock Polychrome RGB: ' + ', '.join(zone.name for zone in zones), True)
