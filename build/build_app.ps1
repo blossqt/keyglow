@@ -1,5 +1,6 @@
 # Builds Keyglow's firmware and packages the app into dist\Keyglow\Keyglow.exe, with Drop's loader
-# (mdloader) in dist\Keyglow\tools.
+# (mdloader) in dist\Keyglow\tools and Keyglow Lights (the memory's lights; needs the .NET 10 SDK)
+# in dist\Keyglow\lights.
 #
 #   powershell -ExecutionPolicy Bypass -File build\build_app.ps1
 #
@@ -53,6 +54,11 @@ Copy-Item $Loader (Join-Path $Dist 'tools\mdloader.exe') -Force
 Copy-Item (Join-Path $Cache 'mdloader\LICENSE') (Join-Path $Dist 'tools\mdloader-LICENSE.txt') -Force
 Copy-Item (Join-Path $Cache 'mdloader\LICENSE_ATMEL') (Join-Path $Dist 'tools\mdloader-LICENSE_ATMEL.txt') -Force
 foreach ($Doc in 'README.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md') { Copy-Item (Join-Path $Root $Doc) $Dist -Force }
+
+# Keyglow Lights - the memory's lights - goes beside it: the service and its setup.
+Write-Host '>> Keyglow Lights'
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'lights\build.ps1') -Out (Join-Path $Dist 'lights')
+if ($LASTEXITCODE -ne 0) { Fail 'Keyglow Lights did not build' }
 
 # Does it start? --self-test makes and draws the window (unseen) and finds a stand-in keyboard.
 $Answer = Join-Path $env:TEMP "keyglow-self-test-$PID.txt"

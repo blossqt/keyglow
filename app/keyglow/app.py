@@ -29,8 +29,10 @@ def _self_test() -> int:
     theme.install(app)
     fake = device.FakeAlt()
     link = Link(look=lambda: (device.READY, None), opener=lambda _: _opened(fake))
-    window = Window(link)
+    pc_link = _fake_pc()
+    window = Window(link, pc_link)
     link.start()
+    pc_link.start()
     problems = []
     if not flasher.firmware().is_file():
         problems.append('firmware missing')
@@ -42,7 +44,10 @@ def _self_test() -> int:
             problems.append('the stand-in keyboard was not found')
         if window.grab().isNull():
             problems.append('the window did not draw')
+        if not pc_link.lights.asked:
+            problems.append('the stand-in memory was not set')
         link.stop(save=False)
+        pc_link.stop()
         said = __version__ if not problems else 'FAILED ' + ', '.join(problems)   # the version first
         if answer:
             Path(answer).write_text(said, encoding='utf-8')
@@ -51,6 +56,14 @@ def _self_test() -> int:
         app.exit(1 if problems else 0)
     QTimer.singleShot(2500, check)
     return theme.leave(app.exec())
+
+
+def _fake_pc():
+    """The PC's lights with a stand-in motherboard and memory."""
+    from . import polychrome, ram
+    from .pclink import PcLink
+    return PcLink(find_board=lambda: polychrome.Board(polychrome.FakeBoard()), lights=ram.FakeLights(),
+                  icue=lambda: False)
 
 
 def _opened(fake):
@@ -166,13 +179,18 @@ def main() -> int:
     if os.environ.get('KEYGLOW_FAKE'):
         fake = device.FakeAlt()
         link = Link(look=lambda: (device.READY, None), opener=lambda _: _opened(fake))
+        pc_link = _fake_pc()
     else:
+        from .pclink import PcLink
         link = Link()
-    window = Window(link)
+        pc_link = PcLink()
+    window = Window(link, pc_link)
     hub = _Hub(window)
     window.show()
     link.start()
+    pc_link.start()
     app.setQuitOnLastWindowClosed(True)
     app.aboutToQuit.connect(link.stop)
+    app.aboutToQuit.connect(pc_link.stop)
     app.aboutToQuit.connect(hub.stop)
     return theme.leave(app.exec())

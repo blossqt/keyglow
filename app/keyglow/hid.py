@@ -1,5 +1,6 @@
 """Talking to a HID device on Windows through hid.dll and SetupAPI, with ctypes: finding the
-Drop ALT's interfaces, and sending and receiving its 32-byte raw HID reports."""
+Drop ALT's interfaces (and the motherboard's light controller), and sending and receiving their
+reports."""
 
 from __future__ import annotations
 
@@ -64,6 +65,8 @@ _hid.HidD_GetPreparsedData.restype = wintypes.BOOLEAN
 _hid.HidD_FreePreparsedData.argtypes = [ctypes.c_void_p]
 _hid.HidP_GetCaps.argtypes = [ctypes.c_void_p, ctypes.POINTER(HIDP_CAPS)]
 _hid.HidP_GetCaps.restype = ctypes.c_long
+_hid.HidD_FlushQueue.argtypes = [wintypes.HANDLE]
+_hid.HidD_FlushQueue.restype = wintypes.BOOLEAN
 _setupapi.SetupDiGetClassDevsW.argtypes = [ctypes.POINTER(GUID), wintypes.LPCWSTR, wintypes.HWND, wintypes.DWORD]
 _setupapi.SetupDiGetClassDevsW.restype = ctypes.c_void_p
 _setupapi.SetupDiEnumDeviceInterfaces.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(GUID),
@@ -213,6 +216,11 @@ class Device:
         if not _kernel32.GetOverlappedResult(self._handle, ctypes.byref(overlapped), ctypes.byref(done), False):
             raise HidError(ctypes.get_last_error(), 'a report to or from the keyboard failed')
         return done.value
+
+    def flush(self) -> None:
+        """Drops input reports Windows is holding that nobody read: a later read then gets the
+        answer to what was just sent, not one left over."""
+        _hid.HidD_FlushQueue(self._handle)
 
     def write(self, data: bytes, timeout_ms: int = 1000) -> None:
         report = bytes([0]) + data              # report id 0

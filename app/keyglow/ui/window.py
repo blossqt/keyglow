@@ -9,13 +9,14 @@ from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QButtonGroup, QColorDialog, QComboBox, QHBoxLayout, QInputDialog, QLineEdit, QMessageBox,
                                QPushButton, QSlider, QVBoxLayout, QWidget)
 
-from .. import __version__, device, flasher, presets
+from .. import __version__, device, flasher, pc, presets
 from .. import state as st
 from . import suiteicons, suitesettings as ss
 from . import theme
 from .board import Board
 from .icons import app_icon
 from .hotkeys import GROUPS as HOTKEYS, HotkeysPage
+from .pc import PcPage
 from .themes import ThemesPage
 
 SWATCHES = ['#ffffff', '#ffd1dc', '#c2255c', '#ff2a2a', '#ff7a00', '#ffd400', '#3ddc5a', '#00d5ff',
@@ -393,9 +394,11 @@ class KeyboardControls(QWidget):
 
 
 class Window(QWidget):
-    def __init__(self, link, parent=None):
+    def __init__(self, link, pc_link=None, parent=None):
         super().__init__(parent)
         self.link = link
+        self.pc_link = pc_link
+        self.pc_parts = pc.load()
         self.state = st.State()
         self.status = device.ABSENT
         self.flash: flasher.Flash | None = None
@@ -467,6 +470,14 @@ class Window(QWidget):
         self.keyboard_controls.fill()
         self.master.setValue(self.state.master)
         self.themes.mark(self.state)
+        self.pc_page.fill(self.pc_parts)
+        if pc_link is not None:
+            pc_link.board.connect(self.pc_page.show_board)
+            pc_link.memory.connect(self.pc_page.show_memory)
+            pc_link.icue.connect(self.pc_page.show_icue)
+            pc_link.setup_done.connect(self.pc_page.setup_done)
+            self.pc_page.setup_asked.connect(pc_link.setup)
+        self.pc_page.lighting.connect(self._pc_lighting)
 
     # --- pages ------------------------------------------------------------------------------
 
@@ -478,9 +489,10 @@ class Window(QWidget):
         self.themes_tab = QPushButton('Themes')
         self.keys_tab = QPushButton('Keys')
         self.edge_tab = QPushButton('Base light')
+        self.pc_tab = QPushButton('PC')
         self.keyboard_tab = QPushButton('Keyboard')
         self.hotkeys_tab = QPushButton('Hotkeys')
-        self.tabs = ss.Segmented([self.themes_tab, self.keys_tab, self.edge_tab, self.keyboard_tab,
+        self.tabs = ss.Segmented([self.themes_tab, self.keys_tab, self.edge_tab, self.pc_tab, self.keyboard_tab,
                                   self.hotkeys_tab])
         self.themes_tab.setChecked(True)
         column.addWidget(self.tabs, 0, Qt.AlignLeft)
@@ -496,6 +508,8 @@ class Window(QWidget):
         self.zone_pages.addWidget(ss.scrolled(self.themes))
         self.zone_pages.addWidget(ss.scrolled(self.keys_controls))
         self.zone_pages.addWidget(ss.scrolled(self.edge_controls))
+        self.pc_page = PcPage()
+        self.zone_pages.addWidget(ss.scrolled(self.pc_page))
         self.keyboard_controls = KeyboardControls(self)
         self.zone_pages.addWidget(ss.scrolled(self.keyboard_controls))
         self.hotkeys = HotkeysPage()
@@ -504,7 +518,7 @@ class Window(QWidget):
         # unchecked it rather than going back to it
         self.tab_group = QButtonGroup(self)
         self.tab_group.setExclusive(True)
-        for n, tab in enumerate((self.themes_tab, self.keys_tab, self.edge_tab, self.keyboard_tab,
+        for n, tab in enumerate((self.themes_tab, self.keys_tab, self.edge_tab, self.pc_tab, self.keyboard_tab,
                                  self.hotkeys_tab)):
             self.tab_group.addButton(tab, n)
             tab.toggled.connect(lambda on, n=n: on and self.zone_pages.setCurrentIndex(n))
@@ -590,12 +604,32 @@ class Window(QWidget):
         self.master.blockSignals(False)
         self.board.show_state(state)
         self.themes.mark(state)
+        self._pc_follow()
 
     def changed(self) -> None:
-        """The window's lighting changed: the picture and the keyboard follow."""
+        """The window's lighting changed: the picture, the keyboard and the PC's parts that follow
+        it follow."""
         self.board.show_state(self.state)
         self.themes.mark(self.state)
         self.link.want(self.state)
+        self._pc_follow()
+
+    # --- the PC's lights --------------------------------------------------------------------
+
+    def _pc_follow(self) -> None:
+        """The parts that follow the keyboard take its lighting as it is now."""
+        if self.pc_link is None:
+            return
+        for name, own in self.pc_parts.items():
+            if own.sync:
+                self.pc_link.want(name, pc.follow(name, self.state))
+
+    def _pc_lighting(self, name: str, own) -> None:
+        """A part's own setting changed on the PC tab: kept, and shown."""
+        self.pc_parts[name] = own
+        pc.save(self.pc_parts)
+        if self.pc_link is not None:
+            self.pc_link.want(name, pc.resolved(name, own, self.state))
 
     def use_theme(self, choice) -> None:
         self.state = choice.apply(self.state)

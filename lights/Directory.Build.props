@@ -1,0 +1,7 @@
+<Project>
+  <!-- Build output stays out of the project folder, as Keyglow's other build output does. -->
+  <PropertyGroup>
+    <UseArtifactsOutput>true</UseArtifactsOutput>
+    <ArtifactsPath>$(LOCALAPPDATA)\KeyglowBuild\lights-artifacts\$(MSBuildProjectName)</ArtifactsPath>
+  </PropertyGroup>
+</Project>

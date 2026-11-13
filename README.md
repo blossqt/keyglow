@@ -22,6 +22,22 @@ write it back.
 On the keyboard: Fn+W and Fn+S change the brightness, and Fn+Z goes through all lights, keys only,
 base only and off.
 
+## The PC's lights
+
+The PC tab sets the memory's and the motherboard's lights too. Each part either takes the keyboard's
+lighting (Same as the keyboard: the keys' effect and colours, or the base light's while the keys are
+off, in the nearest effect the part has) or has its own effect. The parts keep the lighting
+themselves, as the keyboard does.
+
+- **Memory:** Corsair Vengeance RGB and Dominator sticks (DDR4 and DDR5). A stick's lights hang off
+  the PC's SMBus, which only a driver reaches, so Keyglow carries a small service of its own,
+  Keyglow Lights (`lights/`, C#), installed from the PC tab with Windows' permission. It reaches
+  the SMBus through [PawnIO](https://pawnio.eu) (which FanControl installs too), runs as the system
+  only while the lighting changes, and stops itself after a minute. Keyglow talks to it through two
+  blocks of shared memory, not a port or a pipe. iCUE sets the memory's lights itself, so quit it.
+- **Motherboard:** ASRock's Polychrome controller on USB, which runs the board's own lights and its
+  RGB and addressable headers (fans, strips).
+
 ## Building
 
 ```
@@ -29,4 +45,6 @@ powershell -ExecutionPolicy Bypass -File build\bootstrap.ps1
 powershell -ExecutionPolicy Bypass -File build\build_app.ps1
 ```
 
-Tests: `%LOCALAPPDATA%\KeyglowBuild\venv\Scripts\python.exe tests\test_keyglow.py`
+Tests: `%LOCALAPPDATA%\KeyglowBuild\venv\Scripts\python.exe tests\test_keyglow.py`, and
+`tests\test_pc.py` for the PC's lights (its service tests run the built `lights\` service as the
+user, with stand-in sticks). The build needs the .NET 10 SDK for `lights\`.
