@@ -9,7 +9,7 @@ lays what it wants in shared memory (ASK, which signed-in users may write), sets
 The service stops itself after a minute unasked; Keyglow starts it again when it next wants
 something (signed-in users may start it, nothing more). Its setup (lights\\KeyglowLightsSetup.exe)
 installs it into Program Files - checking every file against hashes built into itself - and is run
-with administrator permission from the Devices tab (run_setup).
+with administrator permission from the Memory page (run_setup).
 """
 
 from __future__ import annotations

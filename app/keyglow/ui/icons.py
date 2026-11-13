@@ -55,3 +55,23 @@ def app_icon() -> QIcon:
     for size in (16, 20, 24, 32, 40, 48, 64, 128, 256):
         result.addPixmap(render_app_icon(size))
     return result
+
+
+def _own_icons() -> None:
+    """Keyglow's device icons, beside the suite's (suiteicons): Lucide's memory-stick,
+    circuit-board and refresh-ccw-dot (lucide-static 1.57.0, ISC, as the suite's own)."""
+    from . import suiteicons
+    suiteicons.SHAPES.setdefault('memory', (
+        '<path d="M12 12v-2"/><path d="M12 18v-2"/><path d="M16 12v-2"/><path d="M16 18v-2"/>'
+        '<path d="M2 11h1.5"/><path d="M20 18v-2"/><path d="M20.5 11H22"/><path d="M4 18v-2"/>'
+        '<path d="M8 12v-2"/><path d="M8 18v-2"/><rect x="2" y="6" width="20" height="10" rx="2"/>'))
+    suiteicons.SHAPES.setdefault('motherboard', (
+        '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M11 9h4a2 2 0 0 0 2-2V3"/>'
+        '<circle cx="9" cy="9" r="2"/><path d="M7 21v-4a2 2 0 0 1 2-2h4"/><circle cx="15" cy="15" r="2"/>'))
+    suiteicons.SHAPES.setdefault('sync', (
+        '<path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>'
+        '<path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>'
+        '<circle cx="12" cy="12" r="1"/>'))
+
+
+_own_icons()

@@ -105,7 +105,7 @@ class FollowTest(unittest.TestCase):
     def test_own_lighting_wins_when_not_synced(self):
         own = pc.Part(sync=False, effect=pc.RAM_MARQUEE, a=(1, 2, 3))
         self.assertEqual(pc.resolved('ram', own, _theme('Rainbow')), own)
-        self.assertEqual(pc.resolved('ram', pc.Part(), _theme('Rainbow')).effect, pc.RAM_RAINBOW_WAVE)
+        self.assertEqual(pc.resolved('ram', pc.Part(sync=True), _theme('Rainbow')).effect, pc.RAM_RAINBOW_WAVE)
 
     def test_speeds(self):
         self.assertEqual([pc.ram_request(pc.Part(effect=pc.RAM_CYCLE, speed=s)).speed for s in (0, 100, 255)],
@@ -216,6 +216,8 @@ class PcLinkTest(unittest.TestCase):
 
 
 class PcTabTest(unittest.TestCase):
+    """The device pages and RGB Sync, in the window, with stand-in devices."""
+
     def setUp(self):
         app = _app()
         from keyglow.ui import theme
@@ -224,7 +226,6 @@ class PcTabTest(unittest.TestCase):
             app._keyglow_themed = True
         from keyglow.ui.window import Window
         pc._file().unlink(missing_ok=True)
-        pc.save({'ram': pc.Part(), 'board': pc.Part()})
         self.fake = device.FakeAlt(_theme('Blossom'))
         self.board = poly.FakeBoard()
         self.lights = ram.FakeLights()
@@ -236,7 +237,8 @@ class PcTabTest(unittest.TestCase):
         self.window.show()
         self.link.start()
         self.pc_link.start()
-        self.assertTrue(_wait_until(lambda: self.window.status == device.READY))
+        self.assertTrue(_wait_until(lambda: self.window.status == device.READY and self.window._kb_loaded))
+        self.assertTrue(_wait_until(lambda: self.lights.asked and self.board.live[0][0] != poly.OFF))
 
     def tearDown(self):
         self.link.stop(save=False)
@@ -244,97 +246,122 @@ class PcTabTest(unittest.TestCase):
         self.window.close()
         self.window.deleteLater()
 
-    def test_parts_follow_a_theme(self):
-        self.assertTrue(_wait_until(lambda: self.lights.asked))
-        self.window.use_theme(next(t for t in presets.THEMES if t.name == 'Rainbow'))
-        self.assertTrue(_wait_until(lambda: self.lights.asked[-1].mode == ram.RAINBOW_WAVE
-                                    and self.board.live[0][0] == poly.RAINBOW))
-
-    def test_own_lighting(self):
-        page = self.window.devices_page
-        self.assertTrue(_wait_until(lambda: page.memory.settings.isVisible() or not page.isVisible()
-                                    and self.lights.asked))
-        page.memory.sync.setChecked(False)
-        self.assertFalse(self.window.pc_parts['ram'].sync)
-        page.memory.effect.setCurrentIndex(page.memory.effect.findData(pc.RAM_MARQUEE))
-        self.assertTrue(_wait_until(lambda: self.lights.asked[-1].mode == ram.MARQUEE))
-        self.window.use_theme(next(t for t in presets.THEMES if t.name == 'Rainbow'))
-        _wait_until(lambda: False, 0.4)
-        self.assertEqual(self.lights.asked[-1].mode, ram.MARQUEE)       # not following the keyboard
-        self.assertEqual(pc.load()['ram'].effect, pc.RAM_MARQUEE)
-
-    def test_found_shown(self):
-        page = self.window.devices_page
-        self.assertTrue(_wait_until(lambda: 'Corsair Vengeance RGB DDR5 × 2' in page.memory.where.text()))
-        self.assertTrue(_wait_until(lambda: 'ARGB header 1' in page.board.where.text()))
-        page.show_memory(ram.Answer(ram.NOT_INSTALLED))
-        self.assertFalse(page.install.isHidden())
-        self.assertTrue(page.memory.settings.isHidden())
-        page.show_board(None)
-        self.assertTrue(page.board.settings.isHidden())
-
-    def test_icue_warned(self):
-        page = self.window.devices_page
-        page.show_memory(ram.Answer(ram.READY, sticks=self.lights.sticks))
-        page.show_icue(True)
-        self.assertIn('iCUE', page.memory.problem.text())
-        self.assertFalse(page.memory.problem.isHidden())
-
     def _rainbow(self):
         return next(t for t in presets.THEMES if t.name == 'Rainbow')
 
-    def test_keyboard_out_of_sync_keeps_its_lighting(self):
-        """Keyboard's RGB Sync off: a theme reaches the synced parts, not the keyboard; the keyboard's
-        own changes reach only the keyboard."""
-        self.assertTrue(_wait_until(lambda: self.lights.asked))
-        self.window.devices_page.keyboard.setChecked(False)
-        self.assertFalse(self.window.keyboard_sync)
-        self.window.use_theme(self._rainbow())
-        self.assertTrue(_wait_until(lambda: self.lights.asked[-1].mode == ram.RAINBOW_WAVE))
-        _wait_until(lambda: False, 0.3)
-        self.assertEqual(self.fake.state.keys.mode, st.KEY_SOLID)          # still Blossom
-        asked = len(self.lights.asked)
-        controls = self.window.keys_controls
-        controls.effect.setCurrentIndex(controls.effect.findData(st.KEY_CYCLE))
-        self.assertTrue(_wait_until(lambda: self.fake.state.keys.mode == st.KEY_CYCLE))
-        _wait_until(lambda: False, 0.3)
-        self.assertEqual(len(self.lights.asked), asked)                     # the parts didn't move
-        self.assertEqual(pc.load_sync()[0], False)
-        self.assertEqual(pc.load_sync()[1].keys.mode, st.KEY_RAINBOW)
+    def _sync(self, *names):
+        devices = self.window.devices
+        for name in names:
+            if name == 'keyboard':
+                self.window.keyboard_switch.setChecked(True)
+            else:
+                (devices.memory if name == 'ram' else devices.board).sync.setChecked(True)
 
-    def test_keyboard_rejoins_the_shared_lighting(self):
-        self.assertTrue(_wait_until(lambda: self.lights.asked))
-        self.window.devices_page.keyboard.setChecked(False)
-        self.window.use_theme(self._rainbow())
-        self.window.devices_page.keyboard.setChecked(True)
+    def test_sync_page_only_with_two_synced(self):
+        nav = self.window.nav
+        self.assertEqual(nav.titles(), ['Keyboard', 'Memory', 'Motherboard'])
+        self._sync('keyboard')
+        self.assertEqual(nav.titles(), ['Keyboard', 'Memory', 'Motherboard'])
+        self._sync('ram')
+        self.assertEqual(nav.titles(), ['RGB Sync', 'Keyboard', 'Memory', 'Motherboard'])
+        self.assertEqual(self.window.sync_page.members.text(), 'Drop ALT, Corsair Vengeance RGB DDR5 × 2')
+        self.window.keyboard_switch.setChecked(False)
+        self.assertEqual(nav.titles(), ['Keyboard', 'Memory', 'Motherboard'])
+
+    def test_shared_lighting_reaches_the_synced(self):
+        """Memory and motherboard synced, the keyboard not: a theme on the RGB Sync page reaches
+        the two, and the keyboard keeps its own lighting."""
+        self._sync('ram', 'board')
+        self.window.use_sync_theme(self._rainbow())
+        self.assertTrue(_wait_until(lambda: self.lights.asked[-1].mode == ram.RAINBOW_WAVE
+                                    and self.board.live[0][0] == poly.RAINBOW))
+        _wait_until(lambda: False, 0.3)
+        self.assertEqual(self.fake.state.keys.mode, st.KEY_SOLID)
+        self.assertFalse(self.window.devices.memory.own_frame.isVisibleTo(self.window.devices.memory))
+
+    def test_sync_page_sets_the_lighting(self):
+        self._sync('ram', 'board')
+        editor = self.window.sync_page.editor
+        editor.effect.setCurrentIndex(editor.effect.findData(pc.SYNC_BREATHING))
+        self.assertTrue(_wait_until(lambda: self.lights.asked[-1].mode == ram.COLOR_PULSE
+                                    and self.board.live[0][0] == poly.BREATHING))
+        editor.effect.setCurrentIndex(editor.effect.findData(pc.SYNC_OFF))
+        self.assertTrue(_wait_until(lambda: self.lights.asked[-1].brightness == 0
+                                    and self.board.live[0][0] == poly.OFF))
+
+    def test_keyboard_joins_and_leaves(self):
+        """Synced, the keyboard shows the shared lighting and its lighting tabs make way; leaving,
+        it gets its own back."""
+        self._sync('keyboard', 'ram')
+        self.window.use_sync_theme(self._rainbow())
         self.assertTrue(_wait_until(lambda: self.fake.state.keys.mode == st.KEY_RAINBOW))
         self.assertTrue(self.fake.state.extras & st.X_CAPS)                # its own settings kept
-        self.assertTrue(pc.load_sync()[0])
+        self.window.keys_tab.setChecked(True)
+        self.assertEqual(self.window.zone_pages.currentIndex(), self.window.SYNCED_NOTE)
+        self.window.keyboard_tab.setChecked(True)
+        self.assertEqual(self.window.zone_pages.currentIndex(), 3)          # its settings stay reachable
+        self.window.keyboard_switch.setChecked(False)
+        self.assertTrue(_wait_until(lambda: self.fake.state.keys.mode == st.KEY_SOLID))
+        self.window.keys_tab.setChecked(True)
+        self.assertEqual(self.window.zone_pages.currentIndex(), 1)
 
-    def test_synced_keyboard_changes_reach_every_device(self):
-        self.assertTrue(_wait_until(lambda: self.lights.asked))
-        controls = self.window.keys_controls
-        controls.effect.setCurrentIndex(controls.effect.findData(st.KEY_CYCLE))
-        self.assertTrue(_wait_until(lambda: self.lights.asked[-1].mode == ram.RAINBOW
-                                    and self.board.live[0][0] == poly.SPECTRUM))
+    def test_own_lighting(self):
+        memory = self.window.devices.memory
+        self.assertTrue(memory.own_frame.isVisibleTo(memory))
+        memory.effect.setCurrentIndex(memory.effect.findData(pc.RAM_MARQUEE))
+        self.assertTrue(_wait_until(lambda: self.lights.asked[-1].mode == ram.MARQUEE))
+        memory.effect.setCurrentIndex(memory.effect.findData(0))           # Off
+        self.assertTrue(_wait_until(lambda: self.lights.asked[-1].brightness == 0))
+        self.window._save()
+        self.assertEqual((pc.load()['ram'].on, pc.load()['ram'].effect), (False, pc.RAM_MARQUEE))
+
+    def test_kept(self):
+        self._sync('keyboard', 'board')
+        self.window.use_sync_theme(self._rainbow())
+        self.window._save()
+        keyboard_sync, lighting, own = pc.load_sync()
+        self.assertTrue(keyboard_sync)
+        self.assertEqual(lighting.keys.mode, st.KEY_RAINBOW)
+        self.assertEqual(own.keys.mode, st.KEY_SOLID)                       # Blossom, kept aside
+        self.assertTrue(pc.load()['board'].sync)
+
+    def test_found_shown(self):
+        devices = self.window.devices
+        self.assertTrue(_wait_until(lambda: 'Corsair Vengeance RGB DDR5 × 2' in devices.memory.where.text()))
+        self.assertTrue(_wait_until(lambda: 'ARGB header 1' in devices.board.where.text()))
+        devices.show_memory(ram.Answer(ram.NOT_INSTALLED))
+        self.assertFalse(devices.install.isHidden())
+        self.assertTrue(devices.memory.settings.isHidden())
+        devices.show_board(None)
+        self.assertTrue(devices.board.settings.isHidden())
+
+    def test_icue_warned(self):
+        devices = self.window.devices
+        devices.show_memory(ram.Answer(ram.READY, sticks=self.lights.sticks))
+        devices.show_icue(True)
+        self.assertIn('iCUE', devices.memory.problem.text())
+        self.assertFalse(devices.memory.problem.isHidden())
 
     def test_words(self):
-        page = self.window.devices_page
-        self.assertEqual(page.memory.sync.parent().findChild(type(page.memory.where), 'name').text(), 'RGB Sync')
-        page.show_memory(ram.Answer(ram.NOT_INSTALLED))
-        self.assertEqual(page.install.text(), 'Install service')
+        devices = self.window.devices
+        self.assertEqual(devices.memory.sync.text(), 'RGB Sync')
+        self.assertEqual(self.window.keyboard_switch.text(), 'RGB Sync')
+        devices.show_memory(ram.Answer(ram.NOT_INSTALLED))
+        self.assertEqual(devices.install.text(), 'Install service')
 
     def test_render(self):
-        """A picture of the Devices tab for a person to look at (not checked here)."""
+        """Pictures of each page for a person to look at (not checked here)."""
         out = os.environ.get('KEYGLOW_RENDER')
         if not out:
             self.skipTest('KEYGLOW_RENDER not set')
-        self.window.resize(1040, 800)
-        self.window.devices_tab.setChecked(True)
-        _wait_until(lambda: 'Corsair Vengeance' in self.window.devices_page.memory.where.text())
-        self.window.devices_page.board.sync.setChecked(False)
+        self.window.resize(1200, 820)
+        self._sync('keyboard', 'ram')
         _wait_until(lambda: False, 0.5)
-        self.window.grab().save(str(Path(out) / 'keyglow-pc.png'))
+        for page, name in ((self.window.SYNC_PAGE, 'sync'), (self.window.KEYBOARD_PAGE, 'keyboard'),
+                           (self.window.MEMORY_PAGE, 'memory'), (self.window.BOARD_PAGE, 'board')):
+            self.window.show_device(page)
+            _wait_until(lambda: False, 0.5)
+            self.window.grab().save(str(Path(out) / f'keyglow-{name}.png'))
 
 
 def _service_exe() -> Path | None:

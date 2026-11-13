@@ -1,11 +1,12 @@
 """RGB Sync, and the PC's own lights beside the keyboard's: the memory sticks (through Keyglow
 Lights, ram.py) and the motherboard with its headers (polychrome.py).
 
-RGB Sync is one lighting shared by every device that has it on - the keyboard, the memory, the
-motherboard - as peers: a theme chosen sets it, and while the keyboard is in it, so do the
-keyboard's own changes. A device with RGB Sync off has a lighting of its own (the keyboard's is
-set on its own tabs). The shared lighting is kept in the keyboard's shape (st.State), the richest
-of them, and each other device shows it in the nearest effect it has (follow).
+RGB Sync is one lighting shared, as peers, by the devices that have it on - the keyboard, the
+memory, the motherboard - once two or more do. It is set on its own page (an effect every device
+has, or a theme), and each device has its own lighting besides, shown while it isn't synced (the
+keyboard's is kept aside while it shows the shared one). The shared lighting is kept in the
+keyboard's shape (st.State), the richest of them, and each other device shows it in the nearest
+effect it has (follow). RGB Sync starts off on every device.
 
 All of it is kept in %APPDATA%\\Keyglow\\pc.json; the devices keep their lighting themselves."""
 
@@ -60,7 +61,7 @@ EFFECTS = {'ram': RAM_EFFECTS, 'board': BOARD_EFFECTS}
 @dataclass(frozen=True)
 class Part:
     """One part's lighting: following the keyboard (sync), or its own."""
-    sync: bool = True
+    sync: bool = False
     on: bool = True
     effect: int = 1
     a: tuple = PINK
@@ -81,6 +82,46 @@ class Part:
 
 def _common(colours) -> tuple:
     return Counter(tuple(c) for c in colours).most_common(1)[0][0]
+
+
+# The RGB Sync page's effects: those every device has. number -> (name, keys' effect, base light's
+# effect, (first colour, second colour, speed))
+SYNC_OFF, SYNC_SOLID, SYNC_BREATHING, SYNC_RAINBOW, SYNC_CYCLE, SYNC_GRADIENT = range(6)
+SYNC_EFFECTS = {
+    SYNC_SOLID: ('Solid colour', st.KEY_SOLID, st.EDGE_SOLID, ('Colour', None, False)),
+    SYNC_BREATHING: ('Breathing', st.KEY_BREATHING, st.EDGE_BREATHING, ('Colour', None, True)),
+    SYNC_RAINBOW: ('Rainbow wave', st.KEY_RAINBOW, st.EDGE_RAINBOW, (None, None, True)),
+    SYNC_CYCLE: ('Colour cycle', st.KEY_CYCLE, st.EDGE_CYCLE, (None, None, True)),
+    SYNC_GRADIENT: ('Gradient', st.KEY_GRADIENT, st.EDGE_GRADIENT, ('Start', 'End', False)),
+}
+
+
+def sync_effect(lighting: st.State) -> int:
+    """The RGB Sync page's effect nearest the shared lighting (as follow() reads it)."""
+    if lighting.dark or not lighting.on & (st.ON_KEYS | st.ON_EDGE):
+        return SYNC_OFF
+    zone = lighting.keys if lighting.on & st.ON_KEYS else lighting.edge
+    if lighting.on & st.ON_KEYS:
+        modes = {st.KEY_BREATHING: SYNC_BREATHING, st.KEY_RAINBOW: SYNC_RAINBOW, st.KEY_CYCLE: SYNC_CYCLE,
+                 st.KEY_GRADIENT: SYNC_GRADIENT}
+    else:
+        modes = {st.EDGE_BREATHING: SYNC_BREATHING, st.EDGE_RAINBOW: SYNC_RAINBOW, st.EDGE_CYCLE: SYNC_CYCLE,
+                 st.EDGE_GRADIENT: SYNC_GRADIENT}
+    return modes.get(zone.mode, SYNC_SOLID)
+
+
+def sync_lighting(lighting: st.State, effect: int, a, b, speed: int, bright: int) -> st.State:
+    """The shared lighting set from the RGB Sync page: one effect on every part of every device."""
+    new = lighting.copy()
+    new.dark = 0
+    if effect == SYNC_OFF or effect not in SYNC_EFFECTS:
+        new.on = 0
+        return new
+    _, keys, edge, _ = SYNC_EFFECTS[effect]
+    new.on, new.master = st.ON_KEYS | st.ON_EDGE, bright
+    new.keys = st.Zone(mode=keys, speed=speed, bright=255, a=tuple(a), b=tuple(b))
+    new.edge = st.Zone(mode=edge, speed=speed, bright=255, a=tuple(a), b=tuple(b))
+    return new
 
 
 def with_lighting(keyboard: st.State, lighting: st.State) -> st.State:
@@ -181,7 +222,7 @@ def _read() -> dict:
 
 
 def load() -> dict:
-    """{'ram': Part, 'board': Part}: what was kept, else both in RGB Sync."""
+    """{'ram': Part, 'board': Part}: what was kept, else both with RGB Sync off."""
     parts = {'ram': Part(), 'board': Part()}
     data = _read()
     for name in parts:
@@ -193,26 +234,32 @@ def load() -> dict:
     return parts
 
 
-def load_sync() -> tuple[bool, st.State | None]:
-    """(whether the keyboard is in RGB Sync, the shared lighting as last kept - None if never)."""
-    data = _read()
-    lighting = None
+def _state(data: dict, key: str) -> st.State | None:
     try:
-        lighting = st.State.unpack(bytes.fromhex(data['lighting']))
+        return st.State.unpack(bytes.fromhex(data[key]))
     except (KeyError, ValueError, TypeError):
-        pass
-    return data.get('keyboard_sync', True) is not False, lighting
+        return None
 
 
-def save(parts: dict, keyboard_sync: bool | None = None, lighting: st.State | None = None) -> None:
-    """Keeps the parts' settings, and the keyboard's RGB Sync and the shared lighting if given
-    (else as they were kept)."""
+def load_sync() -> tuple[bool, st.State | None, st.State | None]:
+    """(whether the keyboard's RGB Sync is on, the shared lighting, the keyboard's own lighting -
+    kept aside while it shows the shared one); None for one never kept."""
+    data = _read()
+    return data.get('keyboard_sync') is True, _state(data, 'lighting'), _state(data, 'keyboard_own')
+
+
+def save(parts: dict, keyboard_sync: bool | None = None, lighting: st.State | None = None,
+         keyboard_own: st.State | None = None) -> None:
+    """Keeps the parts' settings, and the keyboard's RGB Sync, the shared lighting and the
+    keyboard's own lighting if given (else as they were kept)."""
     data = _read()
     data.update({name: asdict(part) for name, part in parts.items()})
     if keyboard_sync is not None:
         data['keyboard_sync'] = keyboard_sync
     if lighting is not None:
         data['lighting'] = lighting.pack().hex()
+    if keyboard_own is not None:
+        data['keyboard_own'] = keyboard_own.pack().hex()
     try:
         path = _file()
         path.parent.mkdir(parents=True, exist_ok=True)

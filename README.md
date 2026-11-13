@@ -24,15 +24,16 @@ base only and off.
 
 ## Devices and RGB Sync
 
-The Devices tab lists every lit device: the keyboard, the memory and the motherboard. RGB Sync is
-one lighting shared by every device that has it on, as peers. A theme sets it; while the keyboard
-is in it, the Keys and Base light tabs set it too. Each device shows it in its nearest effect. A
-device with RGB Sync off keeps a lighting of its own: the keyboard's from its own tabs, the memory's
-and motherboard's from the Devices tab. Every device keeps its lighting itself.
+Each device has its own page - Keyboard, Memory, Motherboard - with its own lighting and an RGB
+Sync switch. RGB Sync is one lighting shared, as peers, by the devices that have it on; once two or
+more do, an RGB Sync page appears to set it: an effect every device has (solid colour, breathing,
+rainbow wave, colour cycle, gradient) or a theme. Each synced device shows it in its nearest
+effect, and gets its own lighting back when it leaves. RGB Sync starts off on every device. Every
+device keeps its lighting itself.
 
 - **Memory:** Corsair Vengeance RGB and Dominator sticks (DDR4 and DDR5). A stick's lights hang off
   the PC's SMBus, which only a driver reaches, so Keyglow carries a small service of its own,
-  Keyglow Lights (`lights/`, C#), installed from the Devices tab with Windows' permission. It reaches
+  Keyglow Lights (`lights/`, C#), installed from the Memory page with Windows' permission. It reaches
   the SMBus through [PawnIO](https://pawnio.eu) (which FanControl installs too), runs as the system
   only while the lighting changes, and stops itself after a minute. Keyglow talks to it through two
   blocks of shared memory, not a port or a pipe. iCUE sets the memory's lights itself, so quit it.

@@ -14,9 +14,9 @@ from .. import state as st
 from . import suiteicons, suitesettings as ss
 from . import theme
 from .board import Board
-from .icons import app_icon
+from .icons import app_icon  # noqa: F401 - also adds Keyglow's device icons
 from .hotkeys import GROUPS as HOTKEYS, HotkeysPage
-from .pc import DevicesPage
+from .pc import Devices, SyncPage
 from .themes import ThemesPage
 
 SWATCHES = ['#ffffff', '#ffd1dc', '#c2255c', '#ff2a2a', '#ff7a00', '#ffd400', '#3ddc5a', '#00d5ff',
@@ -393,70 +393,84 @@ class KeyboardControls(QWidget):
         self.window_.changed()
 
 
+class DeviceNav(ss.Nav):
+    """The devices down the left, whose list changes: RGB Sync shows only while two or more devices
+    are synced."""
+
+    def set_items(self, items: list, current_title: str) -> None:
+        self._items = list(items)
+        titles = [title for _, title in items]
+        index = titles.index(current_title) if current_title in titles else 0
+        self._current, self._at, self._hover = index, float(index), -1
+        self.updateGeometry()
+        self.update()
+
+
 class Window(QWidget):
+    SYNC_PAGE, KEYBOARD_PAGE, MEMORY_PAGE, BOARD_PAGE = range(4)
+    NAV = {SYNC_PAGE: ('sync', 'RGB Sync'), KEYBOARD_PAGE: ('keyboard', 'Keyboard'),
+           MEMORY_PAGE: ('memory', 'Memory'), BOARD_PAGE: ('motherboard', 'Motherboard')}
+    SYNCED_NOTE = 5             # the keyboard's tab pages: its note in place of a lighting tab while synced
+
     def __init__(self, link, pc_link=None, parent=None):
         super().__init__(parent)
         self.link = link
         self.pc_link = pc_link
         self.pc_parts = pc.load()
-        self.keyboard_sync, self.sync_state = pc.load_sync()
+        self.keyboard_sync, self.sync_state, self.kb_own = pc.load_sync()
         self.state = st.State()
+        self._kb_in = False             # the keyboard shows the shared lighting
+        self._kb_loaded = False         # its lighting has been read since it was found
         self.status = device.ABSENT
         self.flash: flasher.Flash | None = None
         self.setWindowTitle('Keyglow')
         self.setWindowIcon(app_icon())
         self.setObjectName('settings')
         self.setFont(theme.font(ss.BODY))
-        self.resize(1040, 800)
-        self.setMinimumSize(800, 700)
+        self.resize(1200, 820)
+        self.setMinimumSize(940, 720)
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(400)
+        self._save_timer.timeout.connect(self._save)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 20, 24, 20)
         outer.setSpacing(16)
-
         top = QHBoxLayout()
         top.setSpacing(16)
         top.addWidget(ss.heading('Keyglow', theme.TYPE['title']))
         top.addStretch(1)
-        self.where = ss.label('', ss.SMALL, role='dim')
-        top.addWidget(self.where)
-        top.addSpacing(8)
-        self.master_name = ss.label('Overall brightness')
-        top.addWidget(self.master_name)
-        self.master = _slider(self._master)
-        self.master.setMinimumWidth(160)
-        top.addWidget(self.master)
+        version = ss.label(f'Keyglow {__version__}', ss.SMALL, role='dim')
+        top.addWidget(version)
         outer.addLayout(top)
 
-        self.board = Board()
-        self.board.setMinimumHeight(250)
-        self.board.setMaximumHeight(340)
-        outer.addWidget(self.board, 4)
+        body = QHBoxLayout()
+        body.setSpacing(24)
+        self.nav = DeviceNav()
+        self.nav.chosen.connect(self._nav_chosen)
+        body.addWidget(self.nav, 0, Qt.AlignTop)
+        self.device_pages = theme.Pages()
+        body.addWidget(self.device_pages, 1)
+        outer.addLayout(body, 1)
 
-        self.pages = theme.Pages()
-        outer.addWidget(self.pages, 5)
-        self.pages.addWidget(self._controls_page())     # 0
-        self.pages.addWidget(self._setup_page())        # 1
-        self.empty = ss.Empty('keyboard', 'Plug in your ALT',
-                              'Keyglow looks for a Drop ALT on USB, and finds it as soon as it is plugged in.')
-        self.pages.addWidget(self.empty)                # 2
-        self.pages.addWidget(self._flash_page())        # 3
-
-        foot = QHBoxLayout()
-        foot.setSpacing(8)
-        self.defaults_button = QPushButton('Reset lighting')
-        self.defaults_button.clicked.connect(self._defaults)
-        foot.addWidget(self.defaults_button)
-        foot.addStretch(1)
-        self.restore_button = QPushButton('Put back the original firmware')
-        self.restore_button.clicked.connect(self._restore)
-        foot.addWidget(self.restore_button)
-        version = ss.label(f'Keyglow {__version__}', ss.SMALL, role='dim')
-        foot.addSpacing(8)
-        foot.addWidget(version)
-        outer.addLayout(foot)
-        for button in (self.defaults_button, self.restore_button):
-            button.setCursor(Qt.PointingHandCursor)
+        self.themes = ThemesPage()              # the keyboard's own
+        self.sync_themes = ThemesPage()         # the shared lighting's
+        for page, use in ((self.themes, self.use_theme), (self.sync_themes, self.use_sync_theme)):
+            page.chosen.connect(use)
+            page.save_asked.connect(lambda page=page: self._save_theme(page))
+            page.rename_asked.connect(self._rename_theme)
+            page.delete_asked.connect(self._delete_theme)
+            page.show_saved(presets.saved())
+        self.sync_page = SyncPage(self.sync_themes)
+        self.sync_page.changed.connect(self._sync_edited)
+        self.devices = Devices()
+        self.device_pages.addWidget(ss.scrolled(self.sync_page))             # SYNC_PAGE
+        self.device_pages.addWidget(self._keyboard_page())                   # KEYBOARD_PAGE
+        self.device_pages.addWidget(ss.scrolled(self.devices.memory))        # MEMORY_PAGE
+        self.device_pages.addWidget(ss.scrolled(self.devices.board))         # BOARD_PAGE
+        self.device_pages.setCurrentIndex(self.KEYBOARD_PAGE)
+        self._nav_pages: list = []
 
         theme.restyle(self, ss.style)
         theme.frost(self)
@@ -470,18 +484,79 @@ class Window(QWidget):
         self.edge_controls.fill()
         self.keyboard_controls.fill()
         self.master.setValue(self.state.master)
-        self.themes.mark(self.sync_state if self.sync_state is not None else self.state)
-        self.devices_page.fill(self.pc_parts, self.keyboard_sync)
-        self.devices_page.keyboard_sync.connect(self.set_keyboard_sync)
+        self.themes.mark(self.state)
+        self.devices.fill(self.pc_parts)
+        self.keyboard_switch.setChecked(self.keyboard_sync)
+        self.keyboard_switch.toggled.connect(self.set_keyboard_sync)
+        self.devices.lighting.connect(self._pc_lighting)
         if pc_link is not None:
-            pc_link.board.connect(self.devices_page.show_board)
-            pc_link.memory.connect(self.devices_page.show_memory)
-            pc_link.icue.connect(self.devices_page.show_icue)
-            pc_link.setup_done.connect(self.devices_page.setup_done)
-            self.devices_page.setup_asked.connect(pc_link.setup)
-        self.devices_page.lighting.connect(self._pc_lighting)
+            pc_link.board.connect(self._board_found)
+            pc_link.memory.connect(self._memory_answer)
+            pc_link.icue.connect(self.devices.show_icue)
+            pc_link.setup_done.connect(self.devices.setup_done)
+            self.devices.setup_asked.connect(pc_link.setup)
+        if self.sync_state is not None:
+            self.sync_page.fill(self.sync_state)
+            self.sync_themes.mark(self.sync_state)
+        self._apply_sync()
 
     # --- pages ------------------------------------------------------------------------------
+
+    def _nav_chosen(self, index: int) -> None:
+        if 0 <= index < len(self._nav_pages):
+            self.device_pages.setCurrentIndex(self._nav_pages[index])
+
+    def show_device(self, page: int) -> None:
+        """Brings a device's page (or RGB Sync's) into sight, if it is listed."""
+        if page in self._nav_pages:
+            self.nav.choose(self._nav_pages.index(page))
+
+    def _keyboard_page(self) -> QWidget:
+        page = QWidget()
+        column = QVBoxLayout(page)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(16)
+        head = QHBoxLayout()
+        head.setSpacing(16)
+        self.where = ss.label('', ss.SMALL, role='dim')
+        head.addWidget(self.where)
+        head.addStretch(1)
+        self.master_name = ss.label('Brightness')
+        head.addWidget(self.master_name)
+        self.master = _slider(self._master)
+        self.master.setMinimumWidth(140)
+        head.addWidget(self.master)
+        column.addLayout(head)
+        row, self.keyboard_switch = ss.switch('RGB Sync', 'Uses the lighting shared by all synced devices. Set on '
+                                              'the RGB Sync page while two or more devices are synced.', True)
+        column.addWidget(row)
+
+        self.board = Board()
+        self.board.setMinimumHeight(200)
+        self.board.setMaximumHeight(300)
+        column.addWidget(self.board, 4)
+
+        self.pages = theme.Pages()
+        column.addWidget(self.pages, 5)
+        self.pages.addWidget(self._controls_page())     # 0
+        self.pages.addWidget(self._setup_page())        # 1
+        self.empty = ss.Empty('keyboard', 'No keyboard detected', 'Supported: Drop ALT (v1), connected over USB.')
+        self.pages.addWidget(self.empty)                # 2
+        self.pages.addWidget(self._flash_page())        # 3
+
+        foot = QHBoxLayout()
+        foot.setSpacing(8)
+        self.defaults_button = QPushButton('Reset lighting')
+        self.defaults_button.clicked.connect(self._defaults)
+        foot.addWidget(self.defaults_button)
+        foot.addStretch(1)
+        self.restore_button = QPushButton('Restore original firmware')
+        self.restore_button.clicked.connect(self._restore)
+        foot.addWidget(self.restore_button)
+        column.addLayout(foot)
+        for button in (self.defaults_button, self.restore_button):
+            button.setCursor(Qt.PointingHandCursor)
+        return page
 
     def _controls_page(self) -> QWidget:
         page = QWidget()
@@ -491,41 +566,54 @@ class Window(QWidget):
         self.themes_tab = QPushButton('Themes')
         self.keys_tab = QPushButton('Keys')
         self.edge_tab = QPushButton('Base light')
-        self.devices_tab = QPushButton('Devices')
-        self.keyboard_tab = QPushButton('Keyboard')
+        self.keyboard_tab = QPushButton('Settings')
         self.hotkeys_tab = QPushButton('Hotkeys')
-        self.tabs = ss.Segmented([self.themes_tab, self.keys_tab, self.edge_tab, self.devices_tab, self.keyboard_tab,
-                                  self.hotkeys_tab])
+        tabs = (self.themes_tab, self.keys_tab, self.edge_tab, self.keyboard_tab, self.hotkeys_tab)
+        self.tabs = ss.Segmented(list(tabs))
         self.themes_tab.setChecked(True)
         column.addWidget(self.tabs, 0, Qt.AlignLeft)
         self.zone_pages = theme.Pages()
-        self.themes = ThemesPage()
-        self.themes.chosen.connect(self.use_theme)
-        self.themes.save_asked.connect(self._save_theme)
-        self.themes.rename_asked.connect(self._rename_theme)
-        self.themes.delete_asked.connect(self._delete_theme)
-        self.themes.show_saved(presets.saved())
         self.keys_controls = ZoneControls(self, 'keys')
         self.edge_controls = ZoneControls(self, 'edge')
         self.zone_pages.addWidget(ss.scrolled(self.themes))
         self.zone_pages.addWidget(ss.scrolled(self.keys_controls))
         self.zone_pages.addWidget(ss.scrolled(self.edge_controls))
-        self.devices_page = DevicesPage()
-        self.zone_pages.addWidget(ss.scrolled(self.devices_page))
         self.keyboard_controls = KeyboardControls(self)
         self.zone_pages.addWidget(ss.scrolled(self.keyboard_controls))
         self.hotkeys = HotkeysPage()
         self.zone_pages.addWidget(ss.scrolled(self.hotkeys))
+        self.zone_pages.addWidget(self._synced_note())             # SYNCED_NOTE
         # one tab at a time: without the group, the tab just left stayed checked, and a click on it
         # unchecked it rather than going back to it
         self.tab_group = QButtonGroup(self)
         self.tab_group.setExclusive(True)
-        for n, tab in enumerate((self.themes_tab, self.keys_tab, self.edge_tab, self.devices_tab, self.keyboard_tab,
-                                 self.hotkeys_tab)):
+        for n, tab in enumerate(tabs):
             self.tab_group.addButton(tab, n)
-            tab.toggled.connect(lambda on, n=n: on and self.zone_pages.setCurrentIndex(n))
+            tab.toggled.connect(lambda on, n=n: on and self._show_tab(n))
         column.addWidget(self.zone_pages, 1)
         return page
+
+    def _synced_note(self) -> QWidget:
+        page = QWidget()
+        column = QVBoxLayout(page)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(16)
+        column.addWidget(ss.Empty('sync', 'Lighting set by RGB Sync',
+                                  'This keyboard shows the lighting shared by all synced devices.'))
+        row = QHBoxLayout()
+        row.addStretch(1)
+        button = QPushButton('Open RGB Sync')
+        button.setCursor(Qt.PointingHandCursor)
+        button.clicked.connect(lambda: self.show_device(self.SYNC_PAGE))
+        row.addWidget(button)
+        row.addStretch(1)
+        column.addLayout(row)
+        column.addStretch(1)
+        return page
+
+    def _show_tab(self, n: int) -> None:
+        """A keyboard tab: its lighting tabs make way for a note while the keyboard is synced."""
+        self.zone_pages.setCurrentIndex(self.SYNCED_NOTE if self._kb_in and n < 3 else n)
 
     def _setup_page(self) -> QWidget:
         page = QWidget()
@@ -579,95 +667,195 @@ class Window(QWidget):
 
     # --- the keyboard -----------------------------------------------------------------------
 
+    def _where(self) -> str:
+        if self.status == device.READY:
+            return 'Drop ALT · Connected' + (' · Firmware update available' if self.link.outdated else '')
+        return {device.ABSENT: 'Drop ALT · Not detected', device.STOCK: 'Drop ALT · Not set up'}[self.status]
+
     def _status(self, status: str) -> None:
         self.status = status
+        if status != device.READY:
+            self._kb_loaded = False
         if self.flash is not None:
             return
-        words = {device.ABSENT: 'No ALT found', device.STOCK: 'ALT found, not set up',
-                 device.READY: 'ALT connected, new firmware ready' if self.link.outdated else 'ALT connected'}
-        self.where.setText(words[status])
+        self.where.setText(self._where())
         ready = status == device.READY
         self.pages.setCurrentIndex({device.READY: 0, device.STOCK: 1, device.ABSENT: 2}[status])
         self.board.set_dim(not ready)
+        self._keyboard_view()
+
+    def _keyboard_view(self) -> None:
+        """What the keyboard page offers: its lighting controls only while it shows its own."""
+        ready = self.status == device.READY
+        own = ready and not self._kb_in
         for widget in (self.master, self.master_name, self.defaults_button):
-            widget.setVisible(ready)
+            widget.setVisible(own)
         self.restore_button.setVisible(ready and flasher.backup().is_file())
+        self._show_tab(self.tab_group.checkedId() if self.tab_group.checkedId() >= 0 else 0)
+
+    def _fill_keyboard(self) -> None:
+        self.keys_controls.fill()
+        self.edge_controls.fill()
+        self.keyboard_controls.fill()
+        self.master.blockSignals(True)
+        self.master.setValue(self.state.master)
+        self.master.blockSignals(False)
+        self.board.show_state(self.state)
+        self.themes.mark(self.state)
 
     def _loaded(self, state: st.State) -> None:
-        self.state = state
-        self.keys_controls.fill()
-        self.edge_controls.fill()
-        self.keyboard_controls.fill()
+        """The keyboard's lighting, read as it was found or as it changed on it (Fn keys)."""
+        first = not self._kb_loaded
+        self._kb_loaded = True
+        if self.sync_state is None:
+            self.sync_state = state.copy()      # the first shared lighting: what the keyboard had
+            self.sync_page.fill(self.sync_state)
+            self.sync_themes.mark(self.sync_state)
+        if self.kb_own is None:
+            self.kb_own = state.copy()
+        self._kb_in = 'keyboard' in self._active()
+        if not self._kb_in:
+            self.state = state
+            self.kb_own = state.copy()
+        elif first:
+            self.state = pc.with_lighting(state, self.sync_state)
+            if self.state.pack() != state.pack():
+                self.link.want(self.state)
+        else:
+            # changed on the keyboard (brightness, all lights off): the shared lighting follows
+            self.state = state
+            self.sync_state = pc.with_lighting(self.sync_state, state)
+            self.sync_page.fill(self.sync_state)
+            self.sync_themes.mark(self.sync_state)
+            self._send_parts()
+        self._fill_keyboard()
         self.keyboard_controls.set_outdated(self.link.outdated, self.link.missing, self.link.firmware)
         if self.flash is None and self.status == device.READY:
-            self.where.setText('ALT connected, new firmware ready' if self.link.outdated else 'ALT connected')
-        self.master.blockSignals(True)
-        self.master.setValue(state.master)
-        self.master.blockSignals(False)
-        self.board.show_state(state)
-        if self.keyboard_sync or self.sync_state is None:
-            self.sync_state = state.copy()      # in RGB Sync, the keyboard holds the shared lighting
-        self.themes.mark(self.sync_state)
-        self._pc_follow()
+            self.where.setText(self._where())
+        self._keyboard_view()
+        self._save_soon()
 
     def changed(self) -> None:
-        """The keyboard's lighting changed in the window: the picture and the keyboard follow, and
-        while the keyboard is in RGB Sync, so does every other device in it."""
+        """The keyboard's lighting changed on its page: the picture and the keyboard follow."""
         self.board.show_state(self.state)
         self.link.want(self.state)
-        if self.keyboard_sync:
-            self.sync_state = self.state.copy()
-            self._pc_follow()
-        self.themes.mark(self.sync_state if self.sync_state is not None else self.state)
-
-    # --- RGB Sync and the PC's lights ---------------------------------------------------------
-
-    def _pc_follow(self) -> None:
-        """The parts in RGB Sync take the shared lighting as it is now."""
-        if self.pc_link is None or self.sync_state is None:
-            return
-        for name, own in self.pc_parts.items():
-            if own.sync:
-                self.pc_link.want(name, pc.follow(name, self.sync_state))
-
-    def _pc_lighting(self, name: str, own) -> None:
-        """A part's setting changed on the Devices tab: kept, and shown."""
-        self.pc_parts[name] = own
-        pc.save(self.pc_parts)
-        if self.pc_link is not None:
-            self.pc_link.want(name, pc.resolved(name, own, self.sync_state or self.state))
-
-    def set_keyboard_sync(self, on: bool) -> None:
-        """The keyboard joins RGB Sync (taking the shared lighting) or leaves it (keeping what it
-        shows, which stays the shared lighting until a theme changes it)."""
-        if on == self.keyboard_sync:
-            return
-        self.keyboard_sync = on
-        if on and self.sync_state is not None:
-            self.state = pc.with_lighting(self.state, self.sync_state)
-            self.keys_controls.fill()
-            self.edge_controls.fill()
-            self.master.blockSignals(True)
-            self.master.setValue(self.state.master)
-            self.master.blockSignals(False)
-            self.changed()
-        elif self.sync_state is None:
-            self.sync_state = self.state.copy()
-        pc.save(self.pc_parts, on, self.sync_state)
+        if not self._kb_in:
+            self.kb_own = self.state.copy()
+        self.themes.mark(self.state)
+        self._save_soon()
 
     def use_theme(self, choice) -> None:
-        """A theme sets the shared lighting: every device in RGB Sync takes it."""
-        self.sync_state = choice.apply(self.sync_state if self.sync_state is not None else self.state)
-        if not self.keyboard_sync:
-            self.themes.mark(self.sync_state)
-            self._pc_follow()
-            pc.save(self.pc_parts, False, self.sync_state)
-            return
+        """One of the keyboard's own themes."""
         self.state = choice.apply(self.state)
-        self.keys_controls.fill()
-        self.edge_controls.fill()
-        self.keyboard_controls.fill()
+        self._fill_keyboard()
         self.changed()
+
+    # --- RGB Sync and the other devices -----------------------------------------------------------
+
+    def _members(self) -> list:
+        """The devices whose RGB Sync is on, in the nav's order."""
+        return [name for name, on in (('keyboard', self.keyboard_sync), ('ram', self.pc_parts['ram'].sync),
+                                      ('board', self.pc_parts['board'].sync)) if on]
+
+    def _active(self) -> set:
+        """The devices showing the shared lighting: those synced, once there are two or more."""
+        members = self._members()
+        return set(members) if len(members) >= 2 else set()
+
+    def _apply_sync(self) -> None:
+        """Each device shows the shared lighting or its own, as its switch and the others' say; RGB
+        Sync's page is listed while it is in use."""
+        active = self._active()
+        pages = ([self.SYNC_PAGE] if active else []) + [self.KEYBOARD_PAGE, self.MEMORY_PAGE, self.BOARD_PAGE]
+        if pages != self._nav_pages:
+            current = self.device_pages.currentIndex()
+            if current not in pages:
+                current = self.KEYBOARD_PAGE
+            self._nav_pages = pages
+            self.nav.set_items([self.NAV[p] for p in pages], self.NAV[current][1])
+            self.device_pages.setCurrentIndex(current)
+        self._show_members()
+        kb_in = 'keyboard' in active
+        if kb_in != self._kb_in and self._kb_loaded and self.sync_state is not None:
+            if kb_in:
+                self.kb_own = self.state.copy()
+                self.state = pc.with_lighting(self.state, self.sync_state)
+            elif self.kb_own is not None:
+                self.state = pc.with_lighting(self.state, self.kb_own)
+            self.link.want(self.state)
+            self._fill_keyboard()
+        self._kb_in = kb_in
+        self._keyboard_view()
+        self.devices.memory.show_own('ram' not in active)
+        self.devices.board.show_own('board' not in active)
+        self._send_parts()
+        self._save_soon()
+
+    def _show_members(self) -> None:
+        names = self.devices.names()
+        shown = {'keyboard': 'Drop ALT', 'ram': names.get('ram', 'Memory'), 'board': names.get('board', 'Motherboard')}
+        self.sync_page.show_members([shown[name] for name in self._members()])
+
+    def _send_parts(self) -> None:
+        """The memory and motherboard: the shared lighting, or their own."""
+        if self.pc_link is None:
+            return
+        active = self._active()
+        for name, own in self.pc_parts.items():
+            if name in active and self.sync_state is not None:
+                self.pc_link.want(name, pc.follow(name, self.sync_state))
+            else:
+                self.pc_link.want(name, pc.replace(own, sync=False))
+
+    def _pc_lighting(self, name: str, own) -> None:
+        """A part's setting changed on its page."""
+        switched = own.sync != self.pc_parts[name].sync
+        self.pc_parts[name] = own
+        if switched:
+            self._apply_sync()
+        else:
+            self._send_parts()
+            self._save_soon()
+
+    def _board_found(self, zones) -> None:
+        self.devices.show_board(zones)
+        self._show_members()
+
+    def _memory_answer(self, answer) -> None:
+        self.devices.show_memory(answer)
+        self._show_members()
+
+    def set_keyboard_sync(self, on: bool) -> None:
+        if on != self.keyboard_sync:
+            self.keyboard_sync = on
+            self._apply_sync()
+
+    def _sync_edited(self, lighting: st.State) -> None:
+        """The shared lighting set on the RGB Sync page."""
+        self._set_shared(lighting, refill=False)
+
+    def use_sync_theme(self, choice) -> None:
+        """A theme for the shared lighting."""
+        base = self.sync_state if self.sync_state is not None else self.state
+        self._set_shared(choice.apply(base))
+
+    def _set_shared(self, lighting: st.State, refill: bool = True) -> None:
+        self.sync_state = lighting
+        if refill:
+            self.sync_page.fill(lighting)
+        self.sync_themes.mark(lighting)
+        if self._kb_in:
+            self.state = pc.with_lighting(self.state, lighting)
+            self.link.want(self.state)
+            self._fill_keyboard()
+        self._send_parts()
+        self._save_soon()
+
+    def _save_soon(self) -> None:
+        self._save_timer.start()
+
+    def _save(self) -> None:
+        pc.save(self.pc_parts, self.keyboard_sync, self.sync_state, self.kb_own)
 
     # --- the user's own themes ----------------------------------------------------------------
 
@@ -675,7 +863,8 @@ class Window(QWidget):
         name, ok = QInputDialog.getText(self, title, 'Name', QLineEdit.Normal, start)
         return name.strip() if ok else ''
 
-    def _save_theme(self) -> None:
+    def _save_theme(self, page=None) -> None:
+        """Saves the lighting the page shows as a theme: the keyboard's own, or the shared one."""
         taken = {t.name for t in presets.saved()}
         n = len(taken) + 1
         while f'My theme {n}' in taken:
@@ -686,11 +875,16 @@ class Window(QWidget):
         if name in taken and QMessageBox.question(
                 self, 'Save theme', f'Replace your theme "{name}" with the lighting as it is now?') != QMessageBox.Yes:
             return
-        self.save_theme(name)
+        shared = page is self.sync_themes and self.sync_state is not None
+        self.save_theme(name, self.sync_state if shared else self.state)
 
-    def save_theme(self, name: str) -> None:
-        presets.save(name, self.state)
-        self.themes.show_saved(presets.saved())
+    def save_theme(self, name: str, lighting: st.State | None = None) -> None:
+        presets.save(name, lighting if lighting is not None else self.state)
+        self._saved_changed()
+
+    def _saved_changed(self) -> None:
+        for page in (self.themes, self.sync_themes):
+            page.show_saved(presets.saved())
 
     def _rename_theme(self, name: str) -> None:
         new = self._ask_name('Rename theme', name)
@@ -700,13 +894,13 @@ class Window(QWidget):
                 self, 'Rename theme', f'You already have a theme called "{new}". Replace it?') != QMessageBox.Yes:
             return
         presets.rename(name, new)
-        self.themes.show_saved(presets.saved())
+        self._saved_changed()
 
     def _delete_theme(self, name: str) -> None:
         if QMessageBox.question(self, 'Delete theme', f'Delete your theme "{name}"?') != QMessageBox.Yes:
             return
         presets.delete(name)
-        self.themes.show_saved(presets.saved())
+        self._saved_changed()
 
     def _master(self, value: int) -> None:
         self.state.master = value
@@ -824,4 +1018,7 @@ class Window(QWidget):
         if self.flash is not None:
             event.ignore()      # never leave a keyboard half-written
             return
+        if self._save_timer.isActive():
+            self._save_timer.stop()
+            self._save()
         super().closeEvent(event)

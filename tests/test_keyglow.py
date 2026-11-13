@@ -462,9 +462,9 @@ class WindowTest(unittest.TestCase):
         """Back to a tab left a moment ago: once, it took a second click (no exclusive group)."""
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
-        tabs = [self.window.themes_tab, self.window.keys_tab, self.window.edge_tab, self.window.devices_tab,
-                self.window.keyboard_tab, self.window.hotkeys_tab]
-        for n in (1, 0, 1, 2, 0, 5, 3, 4, 4, 0):
+        tabs = [self.window.themes_tab, self.window.keys_tab, self.window.edge_tab, self.window.keyboard_tab,
+                self.window.hotkeys_tab]
+        for n in (1, 0, 1, 2, 0, 4, 3, 3, 0):
             QTest.mouseClick(tabs[n], Qt.LeftButton)
             self.assertEqual(self.window.zone_pages.currentIndex(), n)
             self.assertEqual([t.isChecked() for t in tabs], [i == n for i in range(len(tabs))])
@@ -592,7 +592,7 @@ class OldFirmwareWindowTest(unittest.TestCase):
         controls = self.window.keyboard_controls
         self.assertFalse(controls.update_frame.isHidden())
         self.assertFalse(controls.caps_frame.isEnabled())
-        self.assertIn('new firmware', self.window.where.text())
+        self.assertIn('Firmware update available', self.window.where.text())
         ran = []
         self.window._run_flash = lambda title, steps, words: ran.append(steps)
         os.environ['KEYGLOW_MDLOADER'] = sys.executable          # any file that is there
