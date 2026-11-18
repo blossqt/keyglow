@@ -259,14 +259,14 @@ class PcTabTest(unittest.TestCase):
 
     def test_sync_page_only_with_two_synced(self):
         nav = self.window.nav
-        self.assertEqual(nav.titles(), ['Keyboard', 'Memory', 'Motherboard'])
+        self.assertEqual(nav.titles(), ['Keyboard', 'Mouse', 'Memory', 'Motherboard'])
         self._sync('keyboard')
-        self.assertEqual(nav.titles(), ['Keyboard', 'Memory', 'Motherboard'])
+        self.assertEqual(nav.titles(), ['Keyboard', 'Mouse', 'Memory', 'Motherboard'])
         self._sync('ram')
-        self.assertEqual(nav.titles(), ['RGB Sync', 'Keyboard', 'Memory', 'Motherboard'])
+        self.assertEqual(nav.titles(), ['RGB Sync', 'Keyboard', 'Mouse', 'Memory', 'Motherboard'])
         self.assertEqual(self.window.sync_page.members.text(), 'Drop ALT, Corsair Vengeance RGB DDR5 × 2')
         self.window.keyboard_switch.setChecked(False)
-        self.assertEqual(nav.titles(), ['Keyboard', 'Memory', 'Motherboard'])
+        self.assertEqual(nav.titles(), ['Keyboard', 'Mouse', 'Memory', 'Motherboard'])
 
     def test_shared_lighting_reaches_the_synced(self):
         """Memory and motherboard synced, the keyboard not: a theme on the RGB Sync page reaches

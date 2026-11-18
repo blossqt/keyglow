@@ -40,6 +40,15 @@ device keeps its lighting itself.
 - **Motherboard:** ASRock's Polychrome controller on USB, which runs the board's own lights and its
   RGB and addressable headers (fans, strips).
 
+## Mouse
+
+The Mouse page sets a LAMZU Maya X (wired, or through its 1K or 8K dongle) or Maya X V2: DPI stages
+and their indicator colours, polling rate, lift-off distance, debounce time, sleep time, Motion Sync,
+Angle Snapping, Ripple Control and Competition Mode. Changes go to the mouse's active profile at
+once, and the mouse keeps them. The protocol follows [Device HUB](https://github.com/pity-zxcv/device-hub)'s
+notes and driver (MIT); each model's limits come from LAMZU's own model table. The mouse takes no
+part in RGB Sync: it has no lighting of its own beyond the DPI indicator.
+
 ## Building
 
 ```
@@ -48,5 +57,5 @@ powershell -ExecutionPolicy Bypass -File build\build_app.ps1
 ```
 
 Tests: `%LOCALAPPDATA%\KeyglowBuild\venv\Scripts\python.exe tests\test_keyglow.py`, and
-`tests\test_pc.py` for the PC's lights (its service tests run the built `lights\` service as the
+`tests\test_mouse.py` for the mouse, `tests\test_pc.py` for the PC's lights (its service tests run the built `lights\` service as the
 user, with stand-in sticks). The build needs the .NET 10 SDK for `lights\`.

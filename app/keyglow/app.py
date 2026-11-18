@@ -30,9 +30,11 @@ def _self_test() -> int:
     fake = device.FakeAlt()
     link = Link(look=lambda: (device.READY, None), opener=lambda _: _opened(fake))
     pc_link = _fake_pc()
-    window = Window(link, pc_link)
+    mouse_link = _fake_mouse()
+    window = Window(link, pc_link, mouse_link)
     link.start()
     pc_link.start()
+    mouse_link.start()
     problems = []
     if not flasher.firmware().is_file():
         problems.append('firmware missing')
@@ -46,8 +48,11 @@ def _self_test() -> int:
             problems.append('the window did not draw')
         if not pc_link.lights.asked:
             problems.append('the stand-in memory was not set')
+        if window.mouse.view.settings is None:
+            problems.append('the stand-in mouse was not read')
         link.stop(save=False)
         pc_link.stop()
+        mouse_link.stop()
         said = __version__ if not problems else 'FAILED ' + ', '.join(problems)   # the version first
         if answer:
             Path(answer).write_text(said, encoding='utf-8')
@@ -64,6 +69,13 @@ def _fake_pc():
     from .pclink import PcLink
     return PcLink(find_board=lambda: polychrome.Board(polychrome.FakeBoard()), lights=ram.FakeLights(),
                   icue=lambda: False)
+
+
+def _fake_mouse():
+    """The mouse's link with a stand-in LAMZU Maya X."""
+    from . import lamzu
+    from .mouselink import MouseLink
+    return MouseLink(opener=lamzu.fake_mouse)
 
 
 def _opened(fake):
@@ -180,17 +192,22 @@ def main() -> int:
         fake = device.FakeAlt()
         link = Link(look=lambda: (device.READY, None), opener=lambda _: _opened(fake))
         pc_link = _fake_pc()
+        mouse_link = _fake_mouse()
     else:
+        from .mouselink import MouseLink
         from .pclink import PcLink
         link = Link()
         pc_link = PcLink()
-    window = Window(link, pc_link)
+        mouse_link = MouseLink()
+    window = Window(link, pc_link, mouse_link)
     hub = _Hub(window)
     window.show()
     link.start()
     pc_link.start()
+    mouse_link.start()
     app.setQuitOnLastWindowClosed(True)
     app.aboutToQuit.connect(link.stop)
     app.aboutToQuit.connect(pc_link.stop)
+    app.aboutToQuit.connect(mouse_link.stop)
     app.aboutToQuit.connect(hub.stop)
     return theme.leave(app.exec())

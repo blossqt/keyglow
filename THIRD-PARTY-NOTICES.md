@@ -53,3 +53,31 @@ uses only the signed PawnIO SMBus modules LibreHardwareMonitorLib carries, throu
 How Corsair's RGB memory and ASRock's Polychrome USB controller are spoken to follows OpenRGB's
 drivers for them (https://gitlab.com/CalcProgrammer1/OpenRGB, GPL-2.0-or-later). Keyglow's code
 for both is its own; none of OpenRGB's is included.
+
+## Device HUB (LAMZU mice)
+
+app/keyglow/lamzu.py follows Device HUB's protocol notes and driver for LAMZU's mice
+(https://github.com/pity-zxcv/device-hub, docs/PROTOCOL_NOTES.md and
+crates/devhub-hid/src/lamzu.rs), ported from Rust to Python: the request and answer layout, each
+command's group, number and size byte, the polling rate and lift-off distance codes, and the
+checks on an answer.
+
+Copyright (c) 2026 Device HUB contributors. Used under the MIT License:
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Each model's limits (DPI, polling rates, lift-off distances, sleep times) come from LAMZU's own
+model table, https://www.lamzu.net/Config/env-models.json.

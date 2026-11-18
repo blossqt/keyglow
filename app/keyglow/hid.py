@@ -67,6 +67,10 @@ _hid.HidP_GetCaps.argtypes = [ctypes.c_void_p, ctypes.POINTER(HIDP_CAPS)]
 _hid.HidP_GetCaps.restype = ctypes.c_long
 _hid.HidD_FlushQueue.argtypes = [wintypes.HANDLE]
 _hid.HidD_FlushQueue.restype = wintypes.BOOLEAN
+_hid.HidD_SetFeature.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.ULONG]
+_hid.HidD_SetFeature.restype = wintypes.BOOLEAN
+_hid.HidD_GetFeature.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.ULONG]
+_hid.HidD_GetFeature.restype = wintypes.BOOLEAN
 _setupapi.SetupDiGetClassDevsW.argtypes = [ctypes.POINTER(GUID), wintypes.LPCWSTR, wintypes.HWND, wintypes.DWORD]
 _setupapi.SetupDiGetClassDevsW.restype = ctypes.c_void_p
 _setupapi.SetupDiEnumDeviceInterfaces.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(GUID),
@@ -104,6 +108,7 @@ class Interface:
     usage: int
     report_in: int      # bytes, the report id's included
     report_out: int
+    report_feature: int = 0
 
 
 def _paths() -> list[str]:
@@ -152,7 +157,8 @@ def _describe(path: str) -> Interface | None:
             finally:
                 _hid.HidD_FreePreparsedData(preparsed)
         return Interface(path, attributes.VendorID, attributes.ProductID, caps.UsagePage, caps.Usage,
-                         caps.InputReportByteLength, caps.OutputReportByteLength)
+                         caps.InputReportByteLength, caps.OutputReportByteLength,
+                         caps.FeatureReportByteLength)
     finally:
         _kernel32.CloseHandle(handle)
 
@@ -232,3 +238,19 @@ class Device:
         buffer = ctypes.create_string_buffer(self._size_in)
         got = self._io(_kernel32.ReadFile, buffer, self._size_in, timeout_ms)
         return buffer.raw[1:got]                # past the report id
+
+    def set_feature(self, data: bytes) -> None:
+        """Sends a feature report (report id 0), padded to the interface's feature size."""
+        size = self.interface.report_feature or 65
+        report = (bytes([0]) + data).ljust(size, b'\0')[:size]
+        buffer = ctypes.create_string_buffer(report, len(report))
+        if not _hid.HidD_SetFeature(self._handle, buffer, len(report)):
+            raise HidError(ctypes.get_last_error(), 'the device did not take a feature report')
+
+    def get_feature(self) -> bytes:
+        """Reads feature report 0, the report id left off."""
+        size = self.interface.report_feature or 65
+        buffer = ctypes.create_string_buffer(size)
+        if not _hid.HidD_GetFeature(self._handle, buffer, size):
+            raise HidError(ctypes.get_last_error(), 'the device did not give a feature report')
+        return buffer.raw[1:]

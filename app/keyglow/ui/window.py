@@ -16,6 +16,7 @@ from . import theme
 from .board import Board
 from .icons import app_icon  # noqa: F401 - also adds Keyglow's device icons
 from .hotkeys import GROUPS as HOTKEYS, HotkeysPage
+from .mouse import MousePage
 from .pc import Devices, SyncPage
 from .themes import ThemesPage
 
@@ -407,15 +408,17 @@ class DeviceNav(ss.Nav):
 
 
 class Window(QWidget):
-    SYNC_PAGE, KEYBOARD_PAGE, MEMORY_PAGE, BOARD_PAGE = range(4)
-    NAV = {SYNC_PAGE: ('sync', 'RGB Sync'), KEYBOARD_PAGE: ('keyboard', 'Keyboard'),
+    SYNC_PAGE, KEYBOARD_PAGE, MEMORY_PAGE, BOARD_PAGE, MOUSE_PAGE = range(5)
+    NAV = {SYNC_PAGE: ('sync', 'RGB Sync'), KEYBOARD_PAGE: ('keyboard', 'Keyboard'), MOUSE_PAGE: ('mouse', 'Mouse'),
            MEMORY_PAGE: ('memory', 'Memory'), BOARD_PAGE: ('motherboard', 'Motherboard')}
+    DEVICES = (KEYBOARD_PAGE, MOUSE_PAGE, MEMORY_PAGE, BOARD_PAGE)     # in the nav's order
     SYNCED_NOTE = 5             # the keyboard's tab pages: its note in place of a lighting tab while synced
 
-    def __init__(self, link, pc_link=None, parent=None):
+    def __init__(self, link, pc_link=None, mouse_link=None, parent=None):
         super().__init__(parent)
         self.link = link
         self.pc_link = pc_link
+        self.mouse_link = mouse_link
         self.pc_parts = pc.load()
         self.keyboard_sync, self.sync_state, self.kb_own = pc.load_sync()
         self.state = st.State()
@@ -469,6 +472,8 @@ class Window(QWidget):
         self.device_pages.addWidget(self._keyboard_page())                   # KEYBOARD_PAGE
         self.device_pages.addWidget(ss.scrolled(self.devices.memory))        # MEMORY_PAGE
         self.device_pages.addWidget(ss.scrolled(self.devices.board))         # BOARD_PAGE
+        self.mouse = MousePage()
+        self.device_pages.addWidget(ss.scrolled(self.mouse))                 # MOUSE_PAGE
         self.device_pages.setCurrentIndex(self.KEYBOARD_PAGE)
         self._nav_pages: list = []
 
@@ -495,6 +500,9 @@ class Window(QWidget):
             pc_link.icue.connect(self.devices.show_icue)
             pc_link.setup_done.connect(self.devices.setup_done)
             self.devices.setup_asked.connect(pc_link.setup)
+        if mouse_link is not None:
+            mouse_link.changed.connect(self.mouse.show_view)
+            self.mouse.changed.connect(mouse_link.want)
         if self.sync_state is not None:
             self.sync_page.fill(self.sync_state)
             self.sync_themes.mark(self.sync_state)
@@ -766,7 +774,7 @@ class Window(QWidget):
         """Each device shows the shared lighting or its own, as its switch and the others' say; RGB
         Sync's page is listed while it is in use."""
         active = self._active()
-        pages = ([self.SYNC_PAGE] if active else []) + [self.KEYBOARD_PAGE, self.MEMORY_PAGE, self.BOARD_PAGE]
+        pages = ([self.SYNC_PAGE] if active else []) + list(self.DEVICES)
         if pages != self._nav_pages:
             current = self.device_pages.currentIndex()
             if current not in pages:

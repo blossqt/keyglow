@@ -59,7 +59,7 @@ def app_icon() -> QIcon:
 
 def _own_icons() -> None:
     """Keyglow's device icons, beside the suite's (suiteicons): Lucide's memory-stick,
-    circuit-board and refresh-ccw-dot (lucide-static 1.57.0, ISC, as the suite's own)."""
+    circuit-board, refresh-ccw-dot and mouse (lucide-static 1.57.0, ISC, as the suite's own)."""
     from . import suiteicons
     suiteicons.SHAPES.setdefault('memory', (
         '<path d="M12 12v-2"/><path d="M12 18v-2"/><path d="M16 12v-2"/><path d="M16 18v-2"/>'
@@ -72,6 +72,7 @@ def _own_icons() -> None:
         '<path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>'
         '<path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>'
         '<circle cx="12" cy="12" r="1"/>'))
+    suiteicons.SHAPES.setdefault('mouse', '<rect x="5" y="2" width="14" height="20" rx="7"/><path d="M12 6v4"/>')
 
 
 _own_icons()
