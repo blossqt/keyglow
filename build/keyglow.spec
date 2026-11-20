@@ -30,7 +30,6 @@ a = Analysis(
     binaries=qt_plugin_binaries,
     datas=[(os.path.join(ui_dir, 'GeistSerif-Regular.ttf'), os.path.join('keyglow', 'ui')),
            (os.path.join(ui_dir, 'GeistSerif-OFL.txt'), os.path.join('keyglow', 'ui')),
-           (os.path.join(ui_dir, 'glasslens.dll'), os.path.join('keyglow', 'ui')),
            # the firmware Keyglow puts on the keyboard (firmware/build.sh)
            (os.path.join(app_dir, 'keyglow', 'firmware', 'keyglow_alt.bin'), os.path.join('keyglow', 'firmware'))],
     hiddenimports=hiddenimports,
