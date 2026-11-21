@@ -12,7 +12,7 @@ STATE_VERSION = 2
 PROTOCOL = 1
 STATE_SIZE = 250
 OLD_SIZE = 222      # version 1's state, which Keyglow's first firmware (0.1.0-0.1.1) keeps
-FIRMWARE = 5        # the firmware Keyglow carries (KG_FIRMWARE); a keyboard on less is offered it
+FIRMWARE = 6       # the firmware Keyglow carries (KG_FIRMWARE); a keyboard on less is offered it
 
 KEYS = 67           # LEDs 0-66, under the keys in layout order
 EDGE = 38           # LEDs 67-104, round the edge
@@ -124,7 +124,7 @@ class State:
 # The keys that light while Fn is held: those that do something on layer 1 of the firmware's
 # keymap (keymap.c), and Fn itself. The tests check this against the keymap.
 FN_KEYS = frozenset(
-    list(range(0, 13)) + [14]                   # ` F1-F12, Mute
+    list(range(0, 13)) + [13, 14]               # ` F1-F12, Mute, Insert
     + [17, 22, 23, 25, 26, 27, 29]              # brighter, USB port, USB power, PrtSc, ScrLk, Pause, End
     + [32, 43]                                  # dimmer, volume up
     + [45, 46, 49, 50, 51, 56, 57]              # lit parts, lights off, bootloader, NKRO, debug, PgUp, vol down

@@ -19,7 +19,8 @@ KEYBOARD = [
     ('Function and media keys', [
         ('Fn+1', 'F1, with Fn+2 to Fn+= for F2 to F12'),
         ('Fn+Esc', '` (backtick)'),
-        ('Fn+Del', 'Mute'),
+        ('Fn+Del', 'Insert'),
+        ('Fn+Backspace', 'Mute'),
         ('Fn+PgUp', 'Volume up'),
         ('Fn+PgDn', 'Volume down'),
         ('Fn+P', 'Print Screen'),

@@ -260,6 +260,15 @@ def _minutes(n: int) -> str:
     return '1 minute' if n == 1 else f'{n} minutes'
 
 
+# What each firmware brought, by KG_FIRMWARE: the update line lists those newer than the keyboard's.
+_NEW = {
+    2: 'Caps Lock light, Fn layer light and lights off when idle',
+    4: 'Caps Lock also lights the keys right of it and below it',
+    5: 'Fn+X turns every light off and on',
+    6: 'Fn+Del sends Insert, and Mute moves to Fn+Backspace',
+}
+
+
 class KeyboardControls(QWidget):
     """Caps Lock's light, the Fn layer's, and lights off when idle - and, on a keyboard whose
     Keyglow firmware is older than these, the update that brings them."""
@@ -344,9 +353,8 @@ class KeyboardControls(QWidget):
         self.update_words.setText(
             'These settings need the newer Keyglow firmware on the keyboard. Your lighting stays as it is.'
             if missing else
-            'Keyglow has newer firmware for the keyboard: Fn+X turns every light off and on, and Caps Lock '
-            'lights the keys right of it and below it too, so it shows past its keycap. Your lighting stays '
-            'as it is.')
+            'Firmware update available: ' + '; '.join(_NEW[n] for n in sorted(_NEW) if n > firmware)
+            + '. The current lighting is kept.')
         for frame in (self.caps_frame, self.fn_frame, self.idle_frame):
             frame.setEnabled(not missing)
         self.dark_frame.setEnabled(firmware >= 5)

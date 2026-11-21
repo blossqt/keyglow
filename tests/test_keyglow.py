@@ -584,6 +584,9 @@ class OldFirmwareWindowTest(unittest.TestCase):
             self.assertFalse(controls.update_frame.isHidden())
             self.assertTrue(controls.caps_frame.isEnabled())
             self.assertIn('Caps Lock', controls.update_words.text())
+            self.assertIn('Insert', controls.update_words.text())
+            controls.set_outdated(True, firmware=5)
+            self.assertNotIn('Caps Lock', controls.update_words.text())
         finally:
             link.stop(save=False)
             window.deleteLater()
