@@ -125,8 +125,8 @@ class ZoneControls(QWidget):
         per = QVBoxLayout(self.per_key)
         per.setContentsMargins(0, 0, 0, 0)
         per.setSpacing(ss.ITEMS)
-        self.pick_note = ss.note('Click keys on the picture to pick them. Ctrl or Shift and a click '
-                                 'picks more, and dragging a box picks every key in it. Then choose a colour.')
+        self.pick_note = ss.note('Click keys to select them. Ctrl+click or Shift+click adds keys, and '
+                                 'dragging selects an area. Then choose a colour.')
         per.addWidget(self.pick_note)
         swatches = QHBoxLayout()
         swatches.setSpacing(8)
@@ -351,7 +351,7 @@ class KeyboardControls(QWidget):
         doesn't have these settings at all (Keyglow's first); firmware: the keyboard's number."""
         self.update_frame.setVisible(outdated)
         self.update_words.setText(
-            'These settings need the newer Keyglow firmware on the keyboard. Your lighting stays as it is.'
+            'These settings require newer Keyglow firmware. The current lighting is kept.'
             if missing else
             'Firmware update available: ' + '; '.join(_NEW[n] for n in sorted(_NEW) if n > firmware)
             + '. The current lighting is kept.')
@@ -637,13 +637,12 @@ class Window(QWidget):
         column.setContentsMargins(0, 0, 0, 0)
         frame, items = ss.section('Set up your ALT')
         items.addWidget(ss.label(
-            'To change the lighting from here, Keyglow puts its own firmware on the keyboard. The keys '
-            "stay on Drop's default layout, so any keys you remapped in Drop's configurator go back to "
-            'normal. The firmware it has now is saved on this PC first, and you can put it back from '
-            'here at any time.', wrap=True))
+            'Keyglow installs its own firmware on the keyboard to control its lighting. Keys use Drop\'s '
+            "default layout: remaps made in Drop's configurator are reset. The current firmware is saved "
+            'on this PC and can be restored from here.', wrap=True))
         items.addWidget(ss.note(
             'After you click Set up, hold Fn and B for a second. The keyboard goes dark and stops typing '
-            'for about half a minute while the firmware is written. If it doesn\'t go dark, press the '
+            'for about half a minute while the firmware is written. If it does not go dark, press the '
             'reset button through the small hole on its underside with a paperclip.'))
         row = QHBoxLayout()
         self.setup_button = QPushButton('Set up')

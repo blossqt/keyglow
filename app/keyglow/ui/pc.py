@@ -280,8 +280,8 @@ class Devices(QObject):
         if status == ram.READY:
             where = _sticks(answer.sticks)
         elif status == ram.NOT_INSTALLED:
-            where = ('Memory lighting requires the Keyglow Lights service, which accesses the SMBus through PawnIO '
-                     'and runs only while lighting changes. Installation requires administrator approval.')
+            where = ('Memory lighting requires the Keyglow Lights service. Installation requires administrator '
+                     'approval.')
         elif status == ram.NO_PAWNIO:
             where = ''
             problem = problem or 'The Keyglow Lights service requires PawnIO, which is not installed (pawnio.eu).'

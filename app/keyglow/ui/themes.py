@@ -170,7 +170,7 @@ class ThemesPage(QWidget):
         self.save_button.clicked.connect(self.save_asked)
         head.addWidget(self.save_button)
         column.addLayout(head)
-        self.none_note = ss.note('Lighting you save shows here. Right-click one of yours to rename or delete it.')
+        self.none_note = ss.note('Saved themes appear here. Right-click a theme to rename or delete it.')
         column.addWidget(self.none_note)
         self.own_grid = QGridLayout()
         self.own_grid.setContentsMargins(0, 0, 0, 0)
