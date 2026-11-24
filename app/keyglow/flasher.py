@@ -116,7 +116,7 @@ class Flash(QObject):
 
     def _failed_to_start(self, process: QProcess, error) -> None:
         if error == QProcess.FailedToStart:
-            self.done.emit(False, "Drop's loader didn't start.")
+            self.done.emit(False, "Drop's loader did not start.")
 
     def _finished(self, process: QProcess, code: int, status) -> None:
         self._read(process)
@@ -133,7 +133,7 @@ class Flash(QObject):
 
 def _problem(out: str) -> str:
     if 'Could not find a valid device port' in out:
-        return "The keyboard didn't show up in its bootloader within a minute."
+        return 'The keyboard did not show up in its bootloader within a minute.'
     for line in out.splitlines():
         if line.strip().startswith('Error:'):
             return line.strip()[len('Error:'):].strip().rstrip('!') + '.'
