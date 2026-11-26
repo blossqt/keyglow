@@ -638,7 +638,7 @@ class Window(QWidget):
         frame, items = ss.section('Set up your ALT')
         items.addWidget(ss.label(
             'Keyglow installs its own firmware on the keyboard to control its lighting. Keys use Drop\'s '
-            "default layout: remaps made in Drop's configurator are reset. The current firmware is saved "
+            "default layout, so remaps made in Drop's configurator are reset. The current firmware is saved "
             'on this PC and can be restored from here.', wrap=True))
         items.addWidget(ss.note(
             'After you click Set up, hold Fn and B for a second. The keyboard goes dark and stops typing '
